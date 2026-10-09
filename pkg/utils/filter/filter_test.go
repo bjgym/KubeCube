@@ -266,7 +266,7 @@ var _ = ginkgo.Describe("Filter", func() {
 		Expect(1).To(Equal(len(value)))
 		Expect("world").To(Equal(value[0]))
 		_, err = GetDeepValue(items[0], "metadata.labels.hello1")
-		Expect(err.Error()).To(Equal("field hello1 not exsit"))
+		Expect(err.Error()).To(Equal("field hello1 not exist"))
 	})
 
 })
