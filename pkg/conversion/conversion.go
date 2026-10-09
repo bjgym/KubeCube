@@ -20,11 +20,13 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/kubecube-io/kubecube/pkg/clog"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -161,6 +163,12 @@ func (c *VersionConverter) GvrGreeting(gvr *schema.GroupVersionResource) (greetB
 
 // GvkGreeting describes if given gvk is available in target cluster.
 // a recommend group version kind will return if it cloud not pass through.
+//
+// The recommendation is a deterministic function of what the cluster serves and
+// of the api group's own declared preferred version. It deliberately does not
+// depend on the order discovery returned resources in, and it stays inside the
+// requested group when that group serves the kind, so that two groups serving
+// the same kind cannot silently move an object between them.
 func (c *VersionConverter) GvkGreeting(gvk *schema.GroupVersionKind) (greetBack GreetBackType, rawGvk *schema.GroupVersionKind, recommendGvk *schema.GroupVersionKind, err error) {
 	clusterVersion := Version(c.clusterInfo)
 
@@ -170,53 +178,151 @@ func (c *VersionConverter) GvkGreeting(gvk *schema.GroupVersionKind) (greetBack 
 		gvkCopy.Kind = strings.TrimSuffix(gvk.Kind, "List")
 	}
 
-	// todo: cache the result of all resources
-	_, allResources, err := c.discovery.ServerGroupsAndResources()
+	groups, allResources, err := c.discovery.ServerGroupsAndResources()
 	if err != nil {
+		// one unavailable api group must not hide the rest of the cluster's api surface
 		clog.Warn("some api group is not available in target cluster, err: %s", err.Error())
 	}
-	if allResources != nil {
-		for _, gvs := range allResources {
-			for _, resource := range gvs.APIResources {
-				if resource.Group == "" || resource.Version == "" {
-					gv, err := schema.ParseGroupVersion(gvs.GroupVersion)
-					if err != nil {
-						return IsUnknown, gvk, nil, fmt.Errorf("parse group version %v failed: %v", gvs.GroupVersion, err)
-					}
-					resource.Group, resource.Version = gv.Group, gv.Version
-				}
-				if resource.Group == gvkCopy.Group && resource.Version == gvkCopy.Version && resource.Kind == gvkCopy.Kind {
-					// found match group/version/kind in target cluster.
-					// so the object is available in target cluster.
-					return IsPassThrough, gvk, nil, nil
-				}
-			}
-		}
-		for _, gvs := range allResources {
-			for _, resource := range gvs.APIResources {
-				if resource.Kind == gvkCopy.Kind {
-					preferredGroup := resource.Group
-					preferredVersion := resource.Version
-					if preferredGroup == "" || preferredVersion == "" {
-						gv, err := schema.ParseGroupVersion(gvs.GroupVersion)
-						if err != nil {
-							return IsUnknown, gvk, nil, fmt.Errorf("parse group version %v failed: %v", gvs.GroupVersion, err)
-						}
-						preferredGroup, preferredVersion = gv.Group, gv.Version
-					}
-					// found object kind in target cluster.
-					// Attention: if we had crd which kind is same with k8s kind
-					// might cause problem, example: foo/bar.pod <--> apps/v1.pod
-					return IsNeedConvert, gvk, &schema.GroupVersionKind{Group: preferredGroup, Version: preferredVersion, Kind: gvk.Kind}, nil
-				}
-			}
+
+	served := servedResources(allResources)
+
+	// the exact group/version/kind is served, nothing to adapt
+	for _, r := range served {
+		if r.group == gvkCopy.Group && r.version == gvkCopy.Version && r.kind == gvkCopy.Kind {
+			return IsPassThrough, gvk, nil, nil
 		}
 	}
 
-	clog.Debug("%v is not support in target cluster %v", gvk.String(), clusterVersion)
+	// candidates are the versions that serve this kind at all
+	candidates := make([]servedResource, 0, 4)
+	for _, r := range served {
+		if r.kind == gvkCopy.Kind {
+			candidates = append(candidates, r)
+		}
+	}
+	if len(candidates) == 0 {
+		clog.Debug("%v is not support in target cluster %v", gvk.String(), clusterVersion)
+		return IsNotSupport, gvk, nil, nil
+	}
 
-	return IsNotSupport, gvk, nil, nil
+	// stay in the requested group when it serves the kind
+	pool := candidates
+	sameGroup := make([]servedResource, 0, len(candidates))
+	for _, r := range candidates {
+		if r.group == gvkCopy.Group {
+			sameGroup = append(sameGroup, r)
+		}
+	}
+	if len(sameGroup) > 0 {
+		pool = sameGroup
+	}
+
+	best := pickServed(pool, preferredVersions(groups))
+
+	return IsNeedConvert, gvk, &schema.GroupVersionKind{Group: best.group, Version: best.version, Kind: gvk.Kind}, nil
 }
+
+// servedResource is one group/version/kind the target cluster serves.
+type servedResource struct {
+	group   string
+	version string
+	kind    string
+}
+
+// servedResources flattens the discovery result into one entry per served
+// group/version/kind, filling in the group and version that some servers omit
+// on each individual APIResource.
+func servedResources(allResources []*metav1.APIResourceList) []servedResource {
+	served := make([]servedResource, 0, 64)
+	for _, gvs := range allResources {
+		if gvs == nil {
+			continue
+		}
+		gv, err := schema.ParseGroupVersion(gvs.GroupVersion)
+		if err != nil {
+			clog.Warn("parse group version %v failed: %v", gvs.GroupVersion, err)
+			continue
+		}
+		for _, resource := range gvs.APIResources {
+			group, version := resource.Group, resource.Version
+			if group == "" {
+				group = gv.Group
+			}
+			if version == "" {
+				version = gv.Version
+			}
+			served = append(served, servedResource{group: group, version: version, kind: resource.Kind})
+		}
+	}
+	return served
+}
+
+// preferredVersions maps an api group to the version it declares as preferred,
+// which is the version Kubernetes itself resolves a group-only request to.
+func preferredVersions(groups []*metav1.APIGroup) map[string]string {
+	preferred := make(map[string]string, len(groups))
+	for _, g := range groups {
+		if g == nil || g.PreferredVersion.Version == "" {
+			continue
+		}
+		preferred[g.Name] = g.PreferredVersion.Version
+	}
+	return preferred
+}
+
+// pickServed chooses one entry deterministically:
+//
+//  1. the group's own preferred version, when it serves the kind
+//  2. a stable version (vN) over a pre-release one
+//  3. the highest minor
+//  4. lexicographic version, as the final tie-break
+//
+// The pool is already restricted to one group whenever the requested group
+// serves the kind, so comparing the group first only decides the case where the
+// requested group does not serve it at all.
+func pickServed(pool []servedResource, preferred map[string]string) servedResource {
+	sorted := make([]servedResource, len(pool))
+	copy(sorted, pool)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
+		if a.group != b.group {
+			return a.group < b.group
+		}
+		if pv := preferred[a.group]; pv != "" {
+			if ap, bp := a.version == pv, b.version == pv; ap != bp {
+				return ap
+			}
+		}
+		if as, bs := isStable(a.version), isStable(b.version); as != bs {
+			return as
+		}
+		if am, bm := versionMinor(a.version), versionMinor(b.version); am != bm {
+			return am > bm
+		}
+		return a.version < b.version
+	})
+	return sorted[0]
+}
+
+func isStable(version string) bool {
+	return IsStableVersion(schema.GroupVersion{Version: version})
+}
+
+// versionMinor extracts the numeric minor from a version string such as v1,
+// v1beta1 or v2alpha1, returning 0 when there is none to parse.
+func versionMinor(version string) int {
+	m := versionMinorRegexp.FindStringSubmatch(version)
+	if m == nil {
+		return 0
+	}
+	minor, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0
+	}
+	return minor
+}
+
+var versionMinorRegexp = regexp.MustCompile(`^v(\d+)`)
 
 // Encode encodes given obj, generally the gv should match Object
 func (c *VersionConverter) Encode(obj runtime.Object, gv runtime.GroupVersioner) ([]byte, error) {
@@ -353,14 +459,15 @@ func ParseURL(url string) (bool, bool, *schema.GroupVersionResource, error) {
 	return isCoreApi, isNamespaced, gvr, nil
 }
 
-var stableVersionRegexp = regexp.MustCompile(`^[v]+[0-9]*$`)
+var stableVersionRegexp = regexp.MustCompile(`^v[0-9]+$`)
 
-// IsStableVersion tells if given gv is stable
+// IsStableVersion tells if given gv is stable, meaning a released version (vN)
+// rather than a pre-release one (vNalphaM, vNbetaM). The api group is
+// irrelevant: apps/v1, batch/v1 and networking.k8s.io/v1 are all stable, and
+// recognising only the core group made the preference unusable everywhere it
+// mattered.
 func IsStableVersion(gv schema.GroupVersion) bool {
-	if stableVersionRegexp.MatchString(gv.Version) && gv.Group == "" {
-		return true
-	}
-	return false
+	return stableVersionRegexp.MatchString(gv.Version)
 }
 
 // Version print cluster version info

@@ -339,13 +339,28 @@ func TestIsStableVersion(t *testing.T) {
 		{
 			name: "apps/v1",
 			gv:   schema.GroupVersion{Group: "apps", Version: "v1"},
+			want: true,
+		},
+		{
+			name: "networking.k8s.io/v1",
+			gv:   schema.GroupVersion{Group: "networking.k8s.io", Version: "v1"},
+			want: true,
+		},
+		{
+			name: "v1beta1",
+			gv:   schema.GroupVersion{Version: "v1beta1"},
+			want: false,
+		},
+		{
+			name: "apps/v1beta2",
+			gv:   schema.GroupVersion{Group: "apps", Version: "v1beta2"},
 			want: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := IsStableVersion(tt.gv); got != tt.want {
-				t.Errorf("IsStableVersion() = %v, isCoreApi %v", got, tt.want)
+				t.Errorf("IsStableVersion(%v) = %v, want %v", tt.gv, got, tt.want)
 			}
 		})
 	}
@@ -645,6 +660,33 @@ func TestVersionConverter_GvkGreeting(t *testing.T) {
 			wantGreetBack:    IsNeedConvert,
 			wantRawGvk:       &schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: "CronJob"},
 			wantRecommendGvk: &schema.GroupVersionKind{Group: "batch", Version: "v1beta1", Kind: "CronJob"},
+			wantErr:          false,
+		},
+		{
+			// the recommendation must use the group's declared preferred version
+			// (apps/v1beta1) rather than the highest minor the group serves
+			// (apps/v1beta2)
+			name:             "preferred version wins over higher minor",
+			gvk:              &schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"},
+			wantGreetBack:    IsNeedConvert,
+			wantRawGvk:       &schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"},
+			wantRecommendGvk: &schema.GroupVersionKind{Group: "apps", Version: "v1beta1", Kind: "Deployment"},
+			wantErr:          false,
+		},
+		{
+			name:             "pass through core group",
+			gvk:              &schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"},
+			wantGreetBack:    IsPassThrough,
+			wantRawGvk:       &schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"},
+			wantRecommendGvk: nil,
+			wantErr:          false,
+		},
+		{
+			name:             "pass through extensions",
+			gvk:              &schema.GroupVersionKind{Group: "extensions", Version: "v1beta1", Kind: "Deployment"},
+			wantGreetBack:    IsPassThrough,
+			wantRawGvk:       &schema.GroupVersionKind{Group: "extensions", Version: "v1beta1", Kind: "Deployment"},
+			wantRecommendGvk: nil,
 			wantErr:          false,
 		},
 	}
