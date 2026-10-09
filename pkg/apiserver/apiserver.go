@@ -72,7 +72,7 @@ func registerCubeAPI(cfg *Config) http.Handler {
 	authorization.NewHandler().AddApisTo(router)
 
 	router.POST(constants.ApiPathRoot+"/login", user.Login)
-	router.GET(constants.ApiPathRoot+"/oauth/redirect", user.GitHubLogin)
+	router.GET(constants.ApiPathRoot+"/oauth/redirect", user.OauthLogin)
 
 	userManage := router.Group(constants.ApiPathRoot + "/user")
 	{

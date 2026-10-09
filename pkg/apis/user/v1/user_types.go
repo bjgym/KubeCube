@@ -28,10 +28,12 @@ const (
 	NormalState    UserState = "normal"
 	ForbiddenState UserState = "forbidden"
 
-	NormalLogin LoginType = "normal"
-	OpenIdLogin LoginType = "openId"
-	LDAPLogin   LoginType = "ldap"
-	GitHubLogin LoginType = "github"
+	NormalLogin  LoginType = "normal"
+	OpenIdLogin  LoginType = "openId"
+	LDAPLogin    LoginType = "ldap"
+	GitHubLogin  LoginType = "github"
+	GenericLogin LoginType = "generic"
+	SSO          LoginType = "sso"
 
 	English Language = "en"
 	Chinese Language = "zh"

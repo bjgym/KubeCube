@@ -27,8 +27,10 @@ import (
 
 	v1 "github.com/kubecube-io/kubecube/pkg/apis/user/v1"
 	"github.com/kubecube-io/kubecube/pkg/authentication/authenticators/jwt"
+	"github.com/kubecube-io/kubecube/pkg/authentication/identityprovider/generic"
 	"github.com/kubecube-io/kubecube/pkg/authentication/identityprovider/github"
 	"github.com/kubecube-io/kubecube/pkg/authentication/identityprovider/ldap"
+	"github.com/kubecube-io/kubecube/pkg/authentication/identityprovider/sso"
 	"github.com/kubecube-io/kubecube/pkg/clog"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 	"github.com/kubecube-io/kubecube/pkg/utils/errcode"
@@ -123,14 +125,70 @@ func Login(c *gin.Context) {
 	return
 }
 
-func GitHubLogin(c *gin.Context) {
-	code := c.Query("code")
-	if code == "" {
-		clog.Error("code is null")
+// OauthLogin is the callback every third-party identity provider redirects to.
+// The front end forwards the provider's authorization code as `token`, the
+// provider key it stashed in sessionStorage as `key`, and the login type as
+// `type`, which selects the provider implementation below.
+func OauthLogin(c *gin.Context) {
+	token := c.Query("token")
+	loginType := c.Query("type")
+	key := c.Query("key")
+	// code
+	if loginType == string(v1.GitHubLogin) {
+		GitHubLogin(c, token)
+	} else if loginType == string(v1.SSO) {
+		SsoLogin(c, token, key)
+	} else if loginType == string(v1.GenericLogin) {
+		h := generic.GetProvider()
+		authUser, err := h.Authenticate(c.Request.Header)
+		if err != nil {
+			clog.Warn("generic auth error: %v", err)
+			response.FailReturn(c, errcode.AuthenticateError)
+			return
+		}
+		name := authUser.GetUserName()
+		accountId := authUser.GetAccountId()
+		user, respInfo := GetUserByName(c, accountId)
+		if respInfo != nil {
+			response.FailReturn(c, respInfo)
+			return
+		}
+		if user == nil {
+			response.FailReturn(c, errcode.AuthenticateError)
+			return
+		}
+		c.Set(constants.UserName, user.Name)
+
+		// update user login information
+		user.Status.LastLoginIP = c.ClientIP()
+		user.Status.LastLoginTime = &metav1.Time{Time: time.Now()}
+		respInfo = UpdateUserStatusImpl(c, user)
+		if respInfo != nil {
+			response.FailReturn(c, respInfo)
+			return
+		}
+
+		// generate token and return
+		authJwtImpl := jwt.GetAuthJwtImpl()
+		newToken, err := authJwtImpl.GenerateToken(&v1beta1.UserInfo{Username: accountId})
+		if err != nil {
+			clog.Warn(err.Error())
+			response.FailReturn(c, errcode.AuthenticateError)
+			return
+		}
+		bearerToken := jwt.BearerTokenPrefix + " " + newToken
+		c.SetCookie(constants.AuthorizationHeader, bearerToken, int(authJwtImpl.TokenExpireDuration), "/", "", false, true)
+		user.Spec.Password = ""
+		user.Spec.DisplayName = name
+		response.SuccessReturn(c, user)
+	} else {
+		clog.Error("code and ticket is null")
 		response.FailReturn(c, errcode.AuthenticateError)
 		return
 	}
+}
 
+func GitHubLogin(c *gin.Context, code string) {
 	provider := github.GetProvider()
 	if !provider.GitHubIsEnable {
 		clog.Error("github auth is disabled")
@@ -186,6 +244,78 @@ func GitHubLogin(c *gin.Context) {
 	// generate token and return
 	authJwtImpl := jwt.GetAuthJwtImpl()
 	token, errInfo := authJwtImpl.GenerateToken(&v1beta1.UserInfo{Username: userName})
+	bearerToken := jwt.BearerTokenPrefix + " " + token
+	if errInfo != nil {
+		response.FailReturn(c, errcode.AuthenticateError)
+		return
+	}
+	c.SetCookie(constants.AuthorizationHeader, bearerToken, int(authJwtImpl.TokenExpireDuration), "/", "", false, true)
+	c.Set(constants.UserName, user.Name)
+
+	response.SuccessReturn(c, user)
+	return
+}
+
+// SsoLogin exchanges the provider's authorization code for the user profile and
+// signs the user in. loginType carries the provider key from the
+// kubecube-auth-config ConfigMap. The user is created on first login, keyed by
+// the provider's account id.
+func SsoLogin(c *gin.Context, code string, loginType string) {
+	provider := sso.GetProvider(loginType)
+	if !provider.SsoIsEnable {
+		clog.Error("sso auth is disabled")
+		response.FailReturn(c, errcode.AuthenticateError)
+		return
+	}
+
+	userInfo, err := provider.IdentityExchange(code)
+	if err != nil {
+		response.FailReturn(c, errcode.AuthenticateError)
+		return
+	}
+	clog.Info("user %s,%s auth success by sso", userInfo.GetAccountId(), userInfo.GetUserName())
+
+	// get user by name
+	accountId := userInfo.GetAccountId()
+	userFind, respInfo := GetUserByName(c, accountId)
+	if respInfo != nil {
+		response.FailReturn(c, respInfo)
+		return
+	}
+	if userFind != nil && userFind.Spec.State == v1.ForbiddenState {
+		response.FailReturn(c, errcode.UserIsDisabled)
+		return
+	}
+
+	// if user first login, create user
+	user := &v1.User{}
+	if userFind == nil {
+		user.Name = accountId
+		user.Spec.DisplayName = userInfo.GetUserName()
+		user.Spec.LoginType = v1.SSO
+		user.Spec.Password = md5util.GetMD5Salt(uuid.New().String())
+		user.Labels = make(map[string]string)
+		user.Labels["name"] = accountId
+		if respInfo = CreateUserImpl(c, user); respInfo != nil {
+			response.FailReturn(c, respInfo)
+			return
+		}
+	} else {
+		user = userFind
+	}
+
+	// update user login information
+	user.Status.LastLoginIP = c.ClientIP()
+	user.Status.LastLoginTime = &metav1.Time{Time: time.Now()}
+	respInfo = UpdateUserStatusImpl(c, user)
+	if respInfo != nil {
+		response.FailReturn(c, respInfo)
+		return
+	}
+
+	// generate token and return
+	authJwtImpl := jwt.GetAuthJwtImpl()
+	token, errInfo := authJwtImpl.GenerateToken(&v1beta1.UserInfo{Username: accountId})
 	bearerToken := jwt.BearerTokenPrefix + " " + token
 	if errInfo != nil {
 		response.FailReturn(c, errcode.AuthenticateError)

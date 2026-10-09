@@ -62,3 +62,11 @@ type GitHubConfig struct {
 	ClientID       string
 	ClientSecret   string
 }
+
+type SsoConfig struct {
+	IsEnable     bool
+	ClientID     string
+	ClientSecret string
+	TokenUrl     string
+	UserUrl      string
+}
