@@ -30,15 +30,19 @@ import (
 )
 
 // Reconciler adopts namespaces the platform should own but that carry no
-// ownership label.
+// ownership label, and strips the protocol fields they were described with.
 //
-// It exists because the platform does not build its own tree. In a default
-// deployment the tenant namespace is created by hand and the project namespace
-// is materialised by HNC from an anchor, and neither carries an ownership
-// label; KubeCube's own creation paths for them sit behind an environment
-// variable that no manifest sets. Without this controller the labels that the
-// readers are migrating to would never reach the top of the tree, and removing
-// HNC would leave the tenant and project levels unowned.
+// The adoption half exists because the platform did not always build its own
+// tree: the tenant namespace was created by hand and the project namespace was
+// materialised by HNC from an anchor, and neither carried an ownership label.
+// Without it the labels the readers migrated to would never reach the top of the
+// tree.
+//
+// The cleanup half is what makes the old fields safe to stop reading. Nothing
+// writes them any more, so a namespace that carries them is one created before
+// the migration; this controller is the only thing that removes them, and it
+// does so on the same pass that gives the namespace an owner, which is why a
+// namespace is never left with neither.
 type Reconciler struct {
 	client.Client
 }
@@ -54,29 +58,38 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	if _, _, owned := ownership.Of(ns); owned {
-		return ctrl.Result{}, nil
-	}
-
-	labels, adopt := Adoption(ns, r.parentOf(ctx, ns))
-	if !adopt {
-		clog.Debug("namespace %v carries no ownership label and could not be placed; leaving it unmanaged", ns.Name)
-		return ctrl.Result{}, nil
-	}
-
 	patch := ns.DeepCopy()
-	if patch.Labels == nil {
-		patch.Labels = map[string]string{}
+
+	if _, _, owned := ownership.Of(ns); !owned {
+		labels, adopt := Adoption(ns, r.parentOf(ctx, ns))
+		if !adopt {
+			// A namespace that cannot be placed is left exactly as it is: it
+			// has no owner label, so stripping the fields that say where it
+			// might belong would destroy the only evidence there is.
+			clog.Debug("namespace %v carries no ownership label and could not be placed; leaving it unmanaged", ns.Name)
+			return ctrl.Result{}, nil
+		}
+
+		if patch.Labels == nil {
+			patch.Labels = map[string]string{}
+		}
+		for k, v := range labels {
+			patch.Labels[k] = v
+		}
+
+		clog.Info("adopted namespace %v as %v in tenant %v", ns.Name, labels[ownership.Label], labels[ownership.TenantKey])
 	}
-	for k, v := range labels {
-		patch.Labels[k] = v
+
+	stripped := stripRetired(patch)
+	if stripped == 0 {
+		return ctrl.Result{}, nil
 	}
 
 	if err := r.Patch(ctx, patch, client.MergeFrom(ns)); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	clog.Info("adopted namespace %v as %v in tenant %v", ns.Name, labels[ownership.Label], labels[ownership.TenantKey])
+	clog.Info("removed %v retired protocol field(s) from namespace %v", stripped, ns.Name)
 	return ctrl.Result{}, nil
 }
 

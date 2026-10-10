@@ -114,39 +114,21 @@ func SpaceLabels(tenant, project string) map[string]string {
 // Of resolves which tenant or project owns the object, and reports false when
 // nothing owns it.
 //
-// The label is authoritative. The remaining branches exist only while
-// namespaces written before the label was introduced are still in the cluster:
-// they are a migration path, not a second source of truth, and they are what
-// gets deleted once every namespace carries the label. Falling back rather than
-// failing means a namespace never silently loses its owner part-way through the
-// migration.
+// The label is the only authority. It used to fall back through the HNC protocol
+// labels and the name convention while the migration was in flight; those
+// branches are gone, because the controller that adopts a namespace writes the
+// label on the same pass that removes the old fields, so a namespace is never
+// left with neither.
 func Of(obj metav1.Object) (kind Kind, name string, ok bool) {
-	return OfLabels(obj.GetLabels(), obj.GetName())
+	return OfLabels(obj.GetLabels())
 }
 
-// OfLabels resolves ownership from a label set plus the object's name, for the
-// callers that hold labels rather than an object: a namespace predicate, a
-// controller's map function.
-func OfLabels(labels map[string]string, objName string) (kind Kind, name string, ok bool) {
+// OfLabels is Of for a bare label set, for the callers that hold labels rather
+// than an object: a namespace predicate, a controller's map function.
+func OfLabels(labels map[string]string) (kind Kind, name string, ok bool) {
 	if v := labels[Label]; v != "" {
-		if kind, name, parsed := parse(v); parsed {
-			return kind, name, true
-		}
+		return parse(v)
 	}
-
-	// migrating from: the HNC protocol labels
-	if v := labels[constants.HncTenantLabel]; v != "" {
-		return KindTenant, v, true
-	}
-	if v := labels[constants.HncProjectLabel]; v != "" {
-		return KindProject, v, true
-	}
-
-	// migrating from: the name convention, which only ever covered tenants
-	if strings.HasPrefix(objName, constants.TenantNsPrefix) {
-		return KindTenant, strings.TrimPrefix(objName, constants.TenantNsPrefix), true
-	}
-
 	return "", "", false
 }
 
@@ -154,7 +136,7 @@ func OfLabels(labels map[string]string, objName string) (kind Kind, name string,
 // owns. The name is not consulted: a claim of ownership has to come from a
 // label, which is the whole point of having one.
 func ManagedLabels(labels map[string]string) bool {
-	_, _, ok := OfLabels(labels, "")
+	_, _, ok := OfLabels(labels)
 	return ok
 }
 
@@ -163,25 +145,19 @@ func ManagedLabels(labels map[string]string) bool {
 // with its tenant, which is what lets a reader select everything under a tenant
 // and what lets an authorization decision honour tenant membership on a space.
 func TenantOf(obj metav1.Object) (string, bool) {
-	return TenantOfLabels(obj.GetLabels(), obj.GetName())
+	return TenantOfLabels(obj.GetLabels())
 }
 
 // TenantOfLabels is TenantOf for a bare label set.
-func TenantOfLabels(labels map[string]string, objName string) (string, bool) {
+func TenantOfLabels(labels map[string]string) (string, bool) {
 	if v := labels[TenantKey]; v != "" {
 		return v, true
 	}
 
-	// migrating from: the HNC tenant label, then the name convention
-	if v := labels[constants.HncTenantLabel]; v != "" {
-		return v, true
-	}
-	if strings.HasPrefix(objName, constants.TenantNsPrefix) {
-		return strings.TrimPrefix(objName, constants.TenantNsPrefix), true
-	}
-
-	// an owner that is itself a tenant, when the derived key is absent
-	if kind, name, ok := OfLabels(labels, objName); ok && kind == KindTenant {
+	// An owner that is itself a tenant answers the question without the derived
+	// key. This is a derivation from the authority rather than a second source
+	// of it, which is why it survives the fallbacks being deleted.
+	if kind, name, ok := OfLabels(labels); ok && kind == KindTenant {
 		return name, true
 	}
 
@@ -198,26 +174,11 @@ func ProjectOf(obj metav1.Object) (string, bool) {
 }
 
 // LevelOf reports where the object sits in the tree.
-//
-// Migrating from: a namespace without the level label is placed from what it
-// does carry, and a project-owned namespace is a space unless its name is the
-// project's own.
 func LevelOf(obj metav1.Object) (Level, bool) {
 	if v := obj.GetLabels()[LevelKey]; v != "" {
 		return Level(v), true
 	}
-
-	kind, _, ok := Of(obj)
-	if !ok {
-		return "", false
-	}
-	if kind == KindTenant {
-		return LevelTenant, true
-	}
-	if strings.HasPrefix(obj.GetName(), constants.ProjectNsPrefix) {
-		return LevelProject, true
-	}
-	return LevelSpace, true
+	return "", false
 }
 
 // Managed reports whether the platform owns the object at all.

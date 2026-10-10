@@ -114,23 +114,48 @@ func trimPrefix(name, prefix string) (string, bool) {
 }
 
 // tenantOf reads the tenant from the namespace itself and then from its parent,
-// which is where a project namespace's tenant is recorded. A missing parent is
-// the common case for a namespace that is not part of the tree at all.
+// which is where a project namespace's tenant is recorded.
 func tenantOf(ns *corev1.Namespace, parent *corev1.Namespace) (string, bool) {
-	if ns != nil {
-		if tenant, ok := ownership.TenantOf(ns); ok {
-			return tenant, true
-		}
+	if tenant, ok := tenantNameOf(ns); ok {
+		return tenant, true
 	}
-	if parent != nil {
-		return ownership.TenantOf(parent)
-	}
-	return "", false
+	return tenantNameOf(parent)
 }
 
+// tenantNameOf resolves a namespace's tenant from its labels and, for one that
+// predates them, from its name. The name convention is evidence here and
+// nowhere else: a hand-built tenant namespace carries nothing else, and the
+// label this adoption writes is what every reader consults afterwards.
+func tenantNameOf(ns *corev1.Namespace) (string, bool) {
+	if ns == nil {
+		return "", false
+	}
+
+	if tenant, ok := ownership.TenantOf(ns); ok {
+		return tenant, true
+	}
+	if tenant := ns.Labels[constants.HncTenantLabel]; tenant != "" {
+		return tenant, true
+	}
+	return trimPrefix(ns.GetName(), constants.TenantNsPrefix)
+}
+
+// ownershipOf resolves the owner of a namespace the same way, so that a space
+// under a project namespace that has not been adopted yet is still placed.
 func ownershipOf(parent *corev1.Namespace) (ownership.Kind, string, bool) {
 	if parent == nil {
 		return "", "", false
 	}
-	return ownership.Of(parent)
+
+	if kind, name, ok := ownership.Of(parent); ok {
+		return kind, name, true
+	}
+	if project := parent.Labels[constants.HncProjectLabel]; project != "" {
+		return ownership.KindProject, project, true
+	}
+	if tenant := parent.Labels[constants.HncTenantLabel]; tenant != "" {
+		return ownership.KindTenant, tenant, true
+	}
+
+	return "", "", false
 }

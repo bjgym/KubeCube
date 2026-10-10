@@ -67,23 +67,25 @@ func TestNamespaceJudgement(t *testing.T) {
 		{"a project member reaches the project namespace", projectMember, nsWith("kubecube-project-p1", projectNs), true},
 		{"a project member does not reach the tenant namespace", projectMember, nsWith("kubecube-tenant-t1", tenantNs), false},
 		{"another tenant's member reaches nothing", otherTenantMember, nsWith("space-a", space), false},
-		{"a hand-built tenant namespace is reachable by its name", tenantMember, nsWith("kubecube-tenant-t1", nil), true},
+		{"a namespace that carries no label is unreachable, whatever its name", tenantMember, nsWith("kubecube-tenant-t1", nil), false},
 		{"a hand-built project namespace is not reachable by its name", projectMember, nsWith("kubecube-project-p1", nil), false},
 		{"an unowned namespace belongs to nobody", tenantMember, nsWith("default", nil), false},
 		{
-			name: "the hnc labels still decide while they are being migrated from",
+			// the retired protocol fields are adoption evidence, not authority:
+			// until the controller writes the ownership label, they grant nothing
+			name: "the retired hnc labels decide nothing on their own",
 			user: tenantMember,
 			obj: nsWith("space-a", map[string]string{
 				constants.HncTenantLabel:  "t1",
 				constants.HncProjectLabel: "p1",
 			}),
-			want: true,
+			want: false,
 		},
 		{
-			name: "the hnc project label alone reaches a project member",
+			name: "the retired hnc project label alone decides nothing either",
 			user: projectMember,
 			obj:  nsWith("space-a", map[string]string{constants.HncProjectLabel: "p1"}),
-			want: true,
+			want: false,
 		},
 	}
 

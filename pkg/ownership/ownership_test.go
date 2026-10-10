@@ -50,51 +50,15 @@ func TestOf(t *testing.T) {
 			wantKind: KindProject, wantName: "p1", wantOk: true,
 		},
 		{
-			name: "owner label is authoritative over the hnc labels",
-			obj: ns("kubecube-tenant-t1", map[string]string{
-				Label: Project("p1"),
-
-				constants.HncTenantLabel:  "t1",
-				constants.HncProjectLabel: "p1",
-			}),
-			wantKind: KindProject, wantName: "p1", wantOk: true,
-		},
-		{
-			name: "an unparseable owner label falls through to the hnc labels",
-			obj: ns("space-a", map[string]string{
-				Label: "p1",
-
-				constants.HncProjectLabel: "p1",
-			}),
-			wantKind: KindProject, wantName: "p1", wantOk: true,
-		},
-		{
-			name:     "an owner label with no name falls through to the name prefix",
-			obj:      ns("kubecube-tenant-t1", map[string]string{Label: "tenant:"}),
-			wantKind: KindTenant, wantName: "t1", wantOk: true,
-		},
-		{
-			name:     "hnc tenant label",
-			obj:      ns("space-a", map[string]string{constants.HncTenantLabel: "t1"}),
-			wantKind: KindTenant, wantName: "t1", wantOk: true,
-		},
-		{
-			name: "the hnc tenant label is read before the hnc project label",
+			name: "the hnc labels decide nothing once the owner label is gone",
 			obj: ns("space-a", map[string]string{
 				constants.HncTenantLabel:  "t1",
 				constants.HncProjectLabel: "p1",
 			}),
-			wantKind: KindTenant, wantName: "t1", wantOk: true,
 		},
 		{
-			name:     "hnc project label",
-			obj:      ns("space-a", map[string]string{constants.HncProjectLabel: "p1"}),
-			wantKind: KindProject, wantName: "p1", wantOk: true,
-		},
-		{
-			name:     "tenant name prefix, for a namespace that predates every label",
-			obj:      ns("kubecube-tenant-t1", nil),
-			wantKind: KindTenant, wantName: "t1", wantOk: true,
+			name: "the tenant name prefix decides nothing on its own",
+			obj:  ns("kubecube-tenant-t1", nil),
 		},
 		{
 			name: "the project name prefix never owned anything on its own",

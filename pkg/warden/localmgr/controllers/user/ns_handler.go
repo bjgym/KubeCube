@@ -99,10 +99,10 @@ func (r *UserReconciler) toFindRelatedUsers(tenant, project string) ([]string, e
 // extraTenantAndProject extracts the tenant and the project a namespace belongs
 // to, from whichever labels express them.
 func extraTenantAndProject(ls map[string]string) (string, string) {
-	tenant, _ := ownership.TenantOfLabels(ls, "")
+	tenant, _ := ownership.TenantOfLabels(ls)
 
 	project := ""
-	if kind, name, ok := ownership.OfLabels(ls, ""); ok && kind == ownership.KindProject {
+	if kind, name, ok := ownership.OfLabels(ls); ok && kind == ownership.KindProject {
 		project = name
 	}
 
