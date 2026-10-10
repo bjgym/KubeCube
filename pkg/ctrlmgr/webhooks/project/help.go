@@ -31,6 +31,7 @@ import (
 	"github.com/kubecube-io/kubecube/pkg/utils/domain"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 var notFoundLabelErr = errors.New("can not find .metadata.labels.kubecube.io/tenant label")
@@ -81,26 +82,32 @@ func (r *Validator) ValidateUpdate(_ *tenantv1.Project, currentProject *tenantv1
 	return nil
 }
 
-func (r *Validator) ValidateDelete(project *tenantv1.Project) error {
+// DeleteWarnings reports what deleting a project takes with it.
+//
+// As with a tenant, it no longer refuses the deletion: warden deletes a
+// project's spaces once the resource is gone, so refusing would deadlock a
+// tenant's cascade, which deletes projects while their spaces still exist. The
+// warning keeps the information the refusal used to carry.
+func (r *Validator) DeleteWarnings(project *tenantv1.Project) (admission.Warnings, error) {
 	// check the namespace we take over has been already deleted
 	ctx := context.Background()
 	clusters := multicluster.Interface().FuzzyCopy()
 
-	// a project can only go once its spaces are gone. Its own namespace is not
-	// a space, so it does not block its own project from being deleted.
+	// a project's spaces are what goes with it. Its own namespace is not a
+	// space, so it does not block its own project from being deleted.
 	lbSelector := ownership.SpaceSelector(project.Name)
 
 	for _, cluster := range clusters {
 		namespaceList := v1.NamespaceList{}
 		if err := cluster.Client.Cache().List(ctx, &namespaceList, &client.ListOptions{LabelSelector: lbSelector}); err != nil {
 			clog.Error("Can not list namespaces under this project: %v", err.Error())
-			return fmt.Errorf("can not list namespaces under this project")
+			return nil, fmt.Errorf("can not list namespaces under this project")
 		}
 		if len(namespaceList.Items) > 0 {
-			childResExistErr := fmt.Errorf("there are still namespaces under this project")
-			clog.Info("Delete fail: %v", childResExistErr.Error())
-			return childResExistErr
+			return admission.Warnings{
+				fmt.Sprintf("deleting project %s also deletes its namespaces and everything in them", project.Name),
+			}, nil
 		}
 	}
-	return nil
+	return nil, nil
 }

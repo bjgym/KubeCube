@@ -75,12 +75,12 @@ func (r *Validator) Handle(ctx context.Context, req admission.Request) admission
 			clog.Error(err.Error())
 			return admission.Errored(http.StatusBadRequest, err)
 		}
-		err = r.ValidateDelete(&oldProject)
+		warnings, err := r.DeleteWarnings(&oldProject)
 		if err != nil {
 			clog.Error(err.Error())
 			return admission.Errored(http.StatusBadRequest, err)
 		}
-		return admission.Allowed("")
+		return admission.Allowed("").WithWarnings(warnings...)
 	}
 	return admission.Allowed("")
 }

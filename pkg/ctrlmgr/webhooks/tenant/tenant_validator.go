@@ -47,11 +47,11 @@ func (r *Validator) Handle(ctx context.Context, req admission.Request) admission
 		if err != nil {
 			return admission.Errored(http.StatusBadRequest, err)
 		}
-		err = ValidateDelete(&tenant)
+		warnings, err := DeleteWarnings(&tenant)
 		if err != nil {
 			return admission.Errored(http.StatusBadRequest, err)
 		}
-		return admission.Allowed("")
+		return admission.Allowed("").WithWarnings(warnings...)
 	}
 	return admission.Allowed("")
 }

@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	tenantv1 "github.com/kubecube-io/kubecube/pkg/apis/tenant/v1"
 	"github.com/kubecube-io/kubecube/pkg/clog"
@@ -28,7 +29,14 @@ import (
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 )
 
-func ValidateDelete(tenant *tenantv1.Tenant) error {
+// DeleteWarnings reports what deleting a tenant takes with it.
+//
+// It no longer refuses the deletion. The tenancy controller cascades to the
+// projects a tenant owns, so refusing would make a tenant that has projects
+// impossible to delete — which is what an operator had to work around by
+// deleting the tree bottom-up by hand. The warning keeps the information the
+// refusal used to carry.
+func DeleteWarnings(tenant *tenantv1.Tenant) (admission.Warnings, error) {
 	ctx := context.Background()
 
 	clusters := multicluster.Interface().FuzzyCopy()
@@ -37,13 +45,13 @@ func ValidateDelete(tenant *tenantv1.Tenant) error {
 	for _, cluster := range clusters {
 		if err := cluster.Client.Cache().List(ctx, &projectList, client.MatchingLabels{constants.TenantLabel: tenant.Name}); err != nil {
 			clog.Error("Can not list projects under this tenant: %v", err.Error())
-			return fmt.Errorf("can not list projects under this tenant")
+			return nil, fmt.Errorf("can not list projects under this tenant")
 		}
 		if len(projectList.Items) > 0 {
-			childResExistErr := fmt.Errorf("there are still projects under this tenant")
-			clog.Info("delete fail: %s", childResExistErr.Error())
-			return childResExistErr
+			return admission.Warnings{
+				fmt.Sprintf("deleting tenant %s also deletes the projects under it and everything they contain", tenant.Name),
+			}, nil
 		}
 	}
-	return nil
+	return nil, nil
 }

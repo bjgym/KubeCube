@@ -25,6 +25,7 @@ import (
 	"github.com/kubecube-io/kubecube/pkg/ctrlmgr/controllers/binding"
 	cluster "github.com/kubecube-io/kubecube/pkg/ctrlmgr/controllers/cluster"
 	"github.com/kubecube-io/kubecube/pkg/ctrlmgr/controllers/quota"
+	"github.com/kubecube-io/kubecube/pkg/ctrlmgr/controllers/tenancy"
 	"github.com/kubecube-io/kubecube/pkg/ctrlmgr/options"
 	"github.com/kubecube-io/kubecube/pkg/utils/ctrlopts"
 )
@@ -37,6 +38,8 @@ func init() {
 	setupFns["cuberesourcequota"] = quota.SetupWithManager
 	setupFns["clusterrolebinding"] = binding.SetupClusterRoleBindingReconcilerWithManager
 	setupFns["rolebinding"] = binding.SetupRoleBindingReconcilerWithManager
+	// cascades a tenant's deletion to the projects it owns
+	setupFns["tenancy"] = tenancy.SetupWithManager
 }
 
 // SetupWithManager set up controllers into manager
