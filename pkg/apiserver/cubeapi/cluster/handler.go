@@ -397,6 +397,11 @@ type respBody struct {
 	Project       string       `json:"project"`
 	Tenant        string       `json:"tenant"`
 	NamespaceBody v1.Namespace `json:"namespaceBody"`
+
+	// Unmanaged marks a namespace no tenant or project owns. It is only ever set
+	// for a platform administrator, and it is what tells the console to show the
+	// namespace without a project or a tenant rather than as a broken one.
+	Unmanaged bool `json:"unmanaged,omitempty"`
 }
 
 // getSubNamespaces list sub namespace by tenant
@@ -448,6 +453,11 @@ func (h *handler) getSubNamespaces(c *gin.Context) {
 			return
 		}
 
+		clusterName := cluster.RawCluster.Annotations[constants.CubeCnAnnotation]
+		if len(clusterName) == 0 {
+			clusterName = cluster.Name
+		}
+
 		for _, ns := range nsList.Items {
 			if !ns.ObjectMeta.DeletionTimestamp.IsZero() {
 				continue
@@ -478,10 +488,6 @@ func (h *handler) getSubNamespaces(c *gin.Context) {
 				continue
 			}
 
-			clusterName := cluster.RawCluster.Annotations[constants.CubeCnAnnotation]
-			if len(clusterName) == 0 {
-				clusterName = cluster.Name
-			}
 			item := respBody{
 				Namespace:     ns.Name,
 				Cluster:       cluster.Name,
@@ -492,6 +498,35 @@ func (h *handler) getSubNamespaces(c *gin.Context) {
 			}
 
 			items = append(items, item)
+		}
+
+		// A platform administrator also sees the namespaces the platform does not
+		// own, marked as unmanaged: they exist, they are simply not part of any
+		// tenant. Nobody else is shown them, because they belong to no scope a
+		// tenant or project user could be a member of.
+		if userv1.IsPlatformAdmin(user) && len(tenantList) == 0 {
+			unowned, err := listUnownedNsFunc(ctx)(cli)
+			if err != nil {
+				response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
+				return
+			}
+
+			for _, ns := range unowned.Items {
+				if !ns.DeletionTimestamp.IsZero() {
+					continue
+				}
+				if fuzzyName != "" && !strings.Contains(ns.Name, fuzzyName) {
+					continue
+				}
+
+				items = append(items, respBody{
+					Namespace:     ns.Name,
+					Cluster:       cluster.Name,
+					ClusterName:   clusterName,
+					Unmanaged:     true,
+					NamespaceBody: ns,
+				})
+			}
 		}
 	}
 

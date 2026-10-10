@@ -271,6 +271,18 @@ func ManagedSelector() labels.Selector {
 	return labels.NewSelector().Add(*req)
 }
 
+// UnownedSelector matches the namespaces no tenant or project owns. They are not
+// a failure — a namespace created by hand is not the platform's to claim — but a
+// platform administrator has to be able to see that they exist.
+func UnownedSelector() labels.Selector {
+	req, err := labels.NewRequirement(Label, selection.DoesNotExist, nil)
+	if err != nil {
+		// a requirement on a constant key with no values cannot fail to build
+		return labels.Nothing()
+	}
+	return labels.NewSelector().Add(*req)
+}
+
 func parse(value string) (Kind, string, bool) {
 	if strings.HasPrefix(value, tenantPrefix) {
 		if name := strings.TrimPrefix(value, tenantPrefix); name != "" {

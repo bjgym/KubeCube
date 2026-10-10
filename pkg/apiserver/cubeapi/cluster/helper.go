@@ -489,6 +489,14 @@ func listAllManagedNsFunc(ctx context.Context) func(cli mgrclient.Client) (corev
 	}
 }
 
+func listUnownedNsFunc(ctx context.Context) func(cli mgrclient.Client) (corev1.NamespaceList, error) {
+	return func(cli mgrclient.Client) (corev1.NamespaceList, error) {
+		nsList := corev1.NamespaceList{}
+		err := cli.Cache().List(ctx, &nsList, &client.ListOptions{LabelSelector: ownership.UnownedSelector()})
+		return nsList, err
+	}
+}
+
 func listManagedNsByTenantsFunc(ctx context.Context, tenantList []string) func(cli mgrclient.Client) (corev1.NamespaceList, error) {
 	return func(cli mgrclient.Client) (corev1.NamespaceList, error) {
 		nsList := corev1.NamespaceList{}

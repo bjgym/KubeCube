@@ -176,6 +176,8 @@ func TestSelectors(t *testing.T) {
 		ns("kubecube-project-p1", ProjectLabels("t1", "p1")),
 		ns("space-a", SpaceLabels("t1", "p1")),
 		ns("kubecube-tenant-t2", TenantLabels("t2")),
+		ns("default", nil),
+		ns("kube-public", map[string]string{"kubernetes.io/metadata.name": "kube-public"}),
 	}
 
 	matched := func(sel labels.Selector) []string {
@@ -212,6 +214,14 @@ func TestSelectors(t *testing.T) {
 			name: "the managed selector reaches everything the platform owns",
 			sel:  ManagedSelector(),
 			want: []string{"kubecube-tenant-t1", "kubecube-project-p1", "space-a", "kubecube-tenant-t2"},
+		},
+		{
+			// the complement, which is what a platform administrator is shown:
+			// a namespace created by hand is not a failure, it is simply not the
+			// platform's
+			name: "the unowned selector reaches exactly the namespaces nobody owns",
+			sel:  UnownedSelector(),
+			want: []string{"default", "kube-public"},
 		},
 	}
 
