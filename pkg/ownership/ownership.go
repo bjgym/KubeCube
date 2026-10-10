@@ -56,9 +56,9 @@ const (
 // The three keys. Label is the authority; the other two are derived from it and
 // written with it, so they cannot disagree about where a namespace sits.
 const (
-	Label     = constants.OwnerLabel
-	TenantKey = constants.OwnerTenantLabel
-	LevelKey  = constants.OwnerLevelLabel
+	Label     = constants.NamespaceOwnerLabel
+	TenantKey = constants.NamespaceOwnerTenantLabel
+	LevelKey  = constants.NamespaceOwnerLevelLabel
 )
 
 const (

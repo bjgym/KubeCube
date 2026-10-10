@@ -272,6 +272,19 @@ func (r *UserReconciler) generateClusterRoleBinding(ctx context.Context, user st
 }
 
 // refreshNsBinding refresh the RoleBinding of tenant or project under current cluster.
+//
+// This fan-out is the whole of the object propagation KubeCube performs: one
+// RoleBinding per namespace the scope reaches. It is what replaces HNC for
+// RBAC, and it is deliberately the only entry.
+//
+//   - roles: KubeCube creates no Role objects, so there is nothing of its own to
+//     carry over. A Role a user writes into a project namespace is not spread
+//     into its spaces; that is a capability HNC had and this does not.
+//   - secrets and alertmanagerconfigs: propagated today only because a
+//     post-install Job in hotplugs/charts/kubecube-monitoring asks HNC to. They
+//     are not carried over. Copying every Secret written in a project namespace
+//     into each space beneath it is too wide a mechanism to keep, and the addon
+//     that asked for it needs a narrower one.
 func (r *UserReconciler) refreshNsBinding(ctx context.Context, user string, binding userv1.ScopeBinding) error {
 	namespaces, err := r.toFindNamespacesByScopeBinding(ctx, binding)
 	if err != nil {

@@ -120,24 +120,30 @@ const (
 	// ProjectNsPrefix represent the namespace which relate with project
 	ProjectNsPrefix = "kubecube-project-"
 
-	// OwnerLabel records the single owner of a namespace, either the tenant or
-	// the project it belongs to. It is the authority for namespace ownership;
-	// the HNC protocol labels are derived data being retired. Reading and
-	// writing it lives in pkg/ownership.
-	OwnerLabel = "kubecube.io/owner"
+	// The namespace ownership keys. They are namespaced under "namespace-" on
+	// purpose: kubecube.io/owner is already the alert configuration's owner
+	// identity in this product — the monitoring chart selects AlertmanagerConfigs
+	// by it and stamps alert labels with it — so reusing that key for tenancy
+	// would give one key two meanings.
 
-	// OwnerTenantLabel records which tenant an owned namespace belongs to. It is
-	// derived from OwnerLabel and written with it, never read as an authority.
-	// It exists because a project namespace's owner names the project, and
-	// readers still have to select every namespace under a tenant.
-	OwnerTenantLabel = "kubecube.io/owner-tenant"
+	// NamespaceOwnerLabel records the single owner of a namespace, either the
+	// tenant or the project it belongs to. It is the authority for namespace
+	// ownership; the HNC protocol labels are derived data being retired.
+	// Reading and writing it lives in pkg/ownership.
+	NamespaceOwnerLabel = "kubecube.io/namespace-owner"
 
-	// OwnerLevelLabel records where an owned namespace sits in the tree:
-	// tenant, project or space. It is derived from OwnerLabel and written with
-	// it. It exists because a reader has to select a project's spaces without
-	// matching the project's own namespace, and the name is not a reliable way
-	// to tell them apart.
-	OwnerLevelLabel = "kubecube.io/owner-level"
+	// NamespaceOwnerTenantLabel records which tenant an owned namespace belongs
+	// to. It is derived from NamespaceOwnerLabel and written with it, never read
+	// as an authority. It exists because a project namespace's owner names the
+	// project, and readers still have to select every namespace under a tenant.
+	NamespaceOwnerTenantLabel = "kubecube.io/namespace-tenant"
+
+	// NamespaceOwnerLevelLabel records where an owned namespace sits in the tree:
+	// tenant, project or space. It is derived from NamespaceOwnerLabel and
+	// written with it. It exists because a reader has to select a project's
+	// spaces without matching the project's own namespace, and the name is not a
+	// reliable way to tell them apart.
+	NamespaceOwnerLevelLabel = "kubecube.io/namespace-level"
 
 	// CubeQuotaLabel point to CubeResourceQuota
 	CubeQuotaLabel = "kubecube.io/quota"
