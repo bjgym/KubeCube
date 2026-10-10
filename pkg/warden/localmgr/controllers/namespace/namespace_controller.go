@@ -72,6 +72,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			// has no owner label, so stripping the fields that say where it
 			// might belong would destroy the only evidence there is.
 			clog.Debug("namespace %v carries no ownership label and could not be placed; leaving it unmanaged", ns.Name)
+			reportInconsistency(ns.Name, ns.Labels)
 			return ctrl.Result{}, nil
 		}
 
@@ -85,6 +86,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		clog.Info("adopted namespace %v as %v in tenant %v", ns.Name, labels[ownership.Label], labels[ownership.TenantKey])
 	}
 
+	reportInconsistency(ns.Name, patch.Labels)
+
 	stripped := stripRetired(patch)
 	if stripped == 0 {
 		return ctrl.Result{}, r.stripPropagated(ctx, ns.Name)
@@ -96,6 +99,19 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	clog.Info("removed %v retired protocol field(s) from namespace %v", stripped, ns.Name)
 	return ctrl.Result{}, r.stripPropagated(ctx, ns.Name)
+}
+
+// reportInconsistency says so when a namespace's ownership labels disagree with
+// each other.
+//
+// The three keys are written together from one input, so they cannot drift on
+// their own; a namespace that fails this was written by something else, or by a
+// version that did not yet write all three. The readers believe the owner, so
+// what a human has to look at is the derived keys that disagree with it.
+func reportInconsistency(name string, labels map[string]string) {
+	if reason := ownership.Inconsistency(labels); reason != "" {
+		clog.Warn("namespace %v %s", name, reason)
+	}
 }
 
 // parentOf resolves the namespace the subnamespace annotation points at, which

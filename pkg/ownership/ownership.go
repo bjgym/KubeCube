@@ -27,6 +27,7 @@ limitations under the License.
 package ownership
 
 import (
+	"fmt"
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -191,6 +192,52 @@ func Managed(obj metav1.Object) bool {
 func Is(obj metav1.Object, kind Kind, name string) bool {
 	k, n, ok := Of(obj)
 	return ok && k == kind && n == name
+}
+
+// Inconsistency reports why a label set does not describe a namespace the way
+// this package writes it, and returns "" when it does.
+//
+// The three keys are written together from one input, so they cannot drift on
+// their own: a namespace that fails this check was written by something else,
+// or by a version that did not yet write all three. The owner is the authority,
+// so the derived keys are read against it and never the other way round.
+//
+// It deliberately does not check which level a project-owned namespace is.
+// That is the one thing the owner does not say — a project owns its own
+// namespace and every space beneath it — and the reason the level key exists;
+// claiming to verify it would be claiming to know something the authority does
+// not carry.
+func Inconsistency(labels map[string]string) string {
+	kind, name, owned := OfLabels(labels)
+
+	if !owned {
+		if labels[TenantKey] != "" || labels[LevelKey] != "" {
+			return "carries the derived ownership labels without the owner they derive from"
+		}
+		return ""
+	}
+
+	tenant := labels[TenantKey]
+	level := Level(labels[LevelKey])
+
+	switch kind {
+	case KindTenant:
+		if tenant != name {
+			return fmt.Sprintf("is owned by tenant %s but records tenant %q", name, tenant)
+		}
+		if level != LevelTenant {
+			return fmt.Sprintf("is owned by tenant %s but records level %q", name, level)
+		}
+	case KindProject:
+		if tenant == "" {
+			return fmt.Sprintf("is owned by project %s without recording the tenant it sits in", name)
+		}
+		if level != LevelProject && level != LevelSpace {
+			return fmt.Sprintf("is owned by project %s but records level %q", name, level)
+		}
+	}
+
+	return ""
 }
 
 // Selector matches the namespaces a tenant or project owns.
