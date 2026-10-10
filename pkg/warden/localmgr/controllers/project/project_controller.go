@@ -205,7 +205,8 @@ func (r *ProjectReconciler) crateProjectNamespace(ctx context.Context, tenant, p
 			Name:        fmt.Sprintf("kubecube-project-%v", project),
 			Annotations: map[string]string{constants.HncAnnotation: fmt.Sprintf("kubecube-tenant-%v", tenant)},
 			Labels: map[string]string{
-				constants.OwnerLabel: ownership.Project(project),
+				constants.OwnerLabel:       ownership.Project(project),
+				constants.OwnerTenantLabel: tenant,
 
 				constants.HncIncludedNsLabel:                                        "true",
 				fmt.Sprintf("kubecube-project-%v.tree.hnc.x-k8s.io/depth", project): "0",

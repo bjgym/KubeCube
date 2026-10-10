@@ -42,6 +42,13 @@ const (
 // Label is the only key that records namespace ownership.
 const Label = constants.OwnerLabel
 
+// TenantKey records which tenant an owned namespace belongs to. It is derived
+// from the owner and written in the same operation, so the two cannot disagree
+// about who owns the namespace. It exists because readers have to select every
+// namespace under a tenant, and the owner of a project namespace names the
+// project rather than the tenant it sits in.
+const TenantKey = constants.OwnerTenantLabel
+
 const (
 	tenantPrefix  = "tenant:"
 	projectPrefix = "project:"
@@ -58,6 +65,25 @@ func Tenant(name string) string {
 // space inherits the project it was created in.
 func Project(name string) string {
 	return projectPrefix + name
+}
+
+// TenantLabels are the ownership labels of a tenant's own namespace.
+func TenantLabels(tenant string) map[string]string {
+	return map[string]string{
+		Label:     Tenant(tenant),
+		TenantKey: tenant,
+	}
+}
+
+// ProjectLabels are the ownership labels of a project namespace and of every
+// space beneath it. The tenant is carried as well as the project because a
+// reader has to be able to select every namespace under a tenant, and the
+// project's name does not say which tenant it belongs to.
+func ProjectLabels(tenant, project string) map[string]string {
+	return map[string]string{
+		Label:     Project(project),
+		TenantKey: tenant,
+	}
 }
 
 // Of resolves which tenant or project owns the object, and reports false when
@@ -94,13 +120,31 @@ func Of(obj metav1.Object) (kind Kind, name string, ok bool) {
 	return "", "", false
 }
 
-// TenantOf reports the tenant owning the object, if a tenant owns it.
+// TenantOf reports which tenant the object belongs to, whether the tenant owns
+// it directly or owns it through a project. A project-owned namespace answers
+// with its tenant, which is what lets a reader select everything under a tenant
+// and what lets an authorization decision honour tenant membership on a space.
 func TenantOf(obj metav1.Object) (string, bool) {
-	kind, name, ok := Of(obj)
-	if !ok || kind != KindTenant {
-		return "", false
+	labels := obj.GetLabels()
+
+	if v := labels[TenantKey]; v != "" {
+		return v, true
 	}
-	return name, true
+
+	// migrating from: the HNC tenant label, then the name convention
+	if v := labels[constants.HncTenantLabel]; v != "" {
+		return v, true
+	}
+	if name := obj.GetName(); strings.HasPrefix(name, constants.TenantNsPrefix) {
+		return strings.TrimPrefix(name, constants.TenantNsPrefix), true
+	}
+
+	// an owner that is itself a tenant, when the derived key is absent
+	if kind, name, ok := Of(obj); ok && kind == KindTenant {
+		return name, true
+	}
+
+	return "", false
 }
 
 // ProjectOf reports the project owning the object, if a project owns it.

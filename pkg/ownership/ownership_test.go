@@ -138,6 +138,19 @@ func TestSingleKindReaders(t *testing.T) {
 	if name, ok := ProjectOf(projectNs); !ok || name != "p1" {
 		t.Errorf("ProjectOf(project ns) = %q, %v; want %q, true", name, ok, "p1")
 	}
+	if _, ok := TenantOf(projectNs); ok {
+		t.Error("TenantOf() invented a tenant for a namespace that records none")
+	}
+
+	// a project-owned namespace answers with its tenant as well, because a
+	// tenant member reaches a space through their tenant membership
+	owned := ns("space-a", map[string]string{Label: Project("p1"), TenantKey: "t1"})
+	if name, ok := TenantOf(owned); !ok || name != "t1" {
+		t.Errorf("TenantOf(project-owned ns) = %q, %v; want %q, true", name, ok, "t1")
+	}
+	if name, ok := ProjectOf(owned); !ok || name != "p1" {
+		t.Errorf("ProjectOf(project-owned ns) = %q, %v; want %q, true", name, ok, "p1")
+	}
 	if _, ok := ProjectOf(tenantNs); ok {
 		t.Error("ProjectOf(tenant ns) reported a project")
 	}
@@ -152,6 +165,32 @@ func TestSingleKindReaders(t *testing.T) {
 	}
 	if Is(projectNs, KindTenant, "p1") || Is(projectNs, KindProject, "p2") {
 		t.Error("Is() matched the wrong kind or name")
+	}
+}
+
+func TestLabelConstructors(t *testing.T) {
+	tenantNs := ns("kubecube-tenant-t1", TenantLabels("t1"))
+	if kind, name, ok := Of(tenantNs); !ok || kind != KindTenant || name != "t1" {
+		t.Errorf("TenantLabels: Of() = %q, %q, %v; want tenant, t1, true", kind, name, ok)
+	}
+	if tenant, ok := TenantOf(tenantNs); !ok || tenant != "t1" {
+		t.Errorf("TenantLabels: TenantOf() = %q, %v; want t1, true", tenant, ok)
+	}
+	if _, ok := ProjectOf(tenantNs); ok {
+		t.Error("TenantLabels: ProjectOf() reported a project")
+	}
+
+	projectNs := ns("space-a", ProjectLabels("t1", "p1"))
+	if kind, name, ok := Of(projectNs); !ok || kind != KindProject || name != "p1" {
+		t.Errorf("ProjectLabels: Of() = %q, %q, %v; want project, p1, true", kind, name, ok)
+	}
+	// the tenant has to survive on a project-owned namespace: a reader selects
+	// every namespace under a tenant, and a tenant member reaches a space
+	if tenant, ok := TenantOf(projectNs); !ok || tenant != "t1" {
+		t.Errorf("ProjectLabels: TenantOf() = %q, %v; want t1, true", tenant, ok)
+	}
+	if project, ok := ProjectOf(projectNs); !ok || project != "p1" {
+		t.Errorf("ProjectLabels: ProjectOf() = %q, %v; want p1, true", project, ok)
 	}
 }
 

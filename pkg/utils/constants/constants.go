@@ -126,6 +126,12 @@ const (
 	// writing it lives in pkg/ownership.
 	OwnerLabel = "kubecube.io/owner"
 
+	// OwnerTenantLabel records which tenant an owned namespace belongs to. It is
+	// derived from OwnerLabel and written with it, never read as an authority.
+	// It exists because a project namespace's owner names the project, and
+	// readers still have to select every namespace under a tenant.
+	OwnerTenantLabel = "kubecube.io/owner-tenant"
+
 	// CubeQuotaLabel point to CubeResourceQuota
 	CubeQuotaLabel = "kubecube.io/quota"
 

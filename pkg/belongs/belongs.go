@@ -17,9 +17,8 @@ limitations under the License.
 package belongs
 
 import (
-	"strings"
-
 	v1 "github.com/kubecube-io/kubecube/pkg/apis/user/v1"
+	"github.com/kubecube-io/kubecube/pkg/ownership"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -79,25 +78,16 @@ func namespaceJudgement(user *v1.User, obj runtime.Object) (bool, error) {
 		return false, err
 	}
 
-	if meatObj.GetLabels() == nil {
-		return false, nil
-	}
-
-	nsBelongTenant, ok := meatObj.GetLabels()[constants.HncTenantLabel]
-	if ok && v1.BelongsToTenant(user, nsBelongTenant) {
+	// A namespace is reachable through either fact it carries: the tenant it
+	// belongs to, or the project that owns it. Both are asked, because a tenant
+	// member reaches a project's namespace through their tenant and a project
+	// member reaches it through their project, and neither implies the other.
+	if tenant, ok := ownership.TenantOf(meatObj); ok && v1.BelongsToTenant(user, tenant) {
 		return true, nil
 	}
 
-	nsBelongProject, ok := meatObj.GetLabels()[constants.HncProjectLabel]
-	if ok && v1.BelongsToProject(user, nsBelongProject) {
+	if project, ok := ownership.ProjectOf(meatObj); ok && v1.BelongsToProject(user, project) {
 		return true, nil
-	}
-
-	if strings.HasPrefix(meatObj.GetName(), constants.TenantNsPrefix) {
-		nsBelongTenant = strings.TrimPrefix(meatObj.GetName(), constants.TenantNsPrefix)
-		if v1.BelongsToTenant(user, nsBelongTenant) {
-			return true, nil
-		}
 	}
 
 	return false, nil

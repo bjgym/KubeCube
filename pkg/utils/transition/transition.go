@@ -52,7 +52,8 @@ func SubNs2Ns(subNs *SubnamespaceAnchor) *v1.Namespace {
 				constants.HncAnnotation: subNs.Namespace,
 			},
 			Labels: map[string]string{
-				constants.OwnerLabel: ownership.Project(project),
+				constants.OwnerLabel:       ownership.Project(project),
+				constants.OwnerTenantLabel: tenant,
 
 				constants.HncIncludedNsLabel: "true",
 				fmt.Sprintf("%v%v.tree.hnc.x-k8s.io/depth", constants.ProjectNsPrefix, project): constants.HncProjectDepth,
