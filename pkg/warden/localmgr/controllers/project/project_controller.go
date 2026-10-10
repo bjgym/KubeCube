@@ -34,6 +34,7 @@ import (
 
 	tenantv1 "github.com/kubecube-io/kubecube/pkg/apis/tenant/v1"
 	"github.com/kubecube-io/kubecube/pkg/clog"
+	"github.com/kubecube-io/kubecube/pkg/ownership"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 	"github.com/kubecube-io/kubecube/pkg/utils/env"
 )
@@ -204,6 +205,8 @@ func (r *ProjectReconciler) crateProjectNamespace(ctx context.Context, tenant, p
 			Name:        fmt.Sprintf("kubecube-project-%v", project),
 			Annotations: map[string]string{constants.HncAnnotation: fmt.Sprintf("kubecube-tenant-%v", tenant)},
 			Labels: map[string]string{
+				constants.OwnerLabel: ownership.Project(project),
+
 				constants.HncIncludedNsLabel:                                        "true",
 				fmt.Sprintf("kubecube-project-%v.tree.hnc.x-k8s.io/depth", project): "0",
 				fmt.Sprintf("kubecube-tenant-%v.tree.hnc.x-k8s.io/depth", tenant):   "1",

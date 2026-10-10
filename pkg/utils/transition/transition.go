@@ -33,6 +33,7 @@ import (
 	tenantv1 "github.com/kubecube-io/kubecube/pkg/apis/tenant/v1"
 	userv1 "github.com/kubecube-io/kubecube/pkg/apis/user/v1"
 	"github.com/kubecube-io/kubecube/pkg/clog"
+	"github.com/kubecube-io/kubecube/pkg/ownership"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 )
 
@@ -51,6 +52,8 @@ func SubNs2Ns(subNs *SubnamespaceAnchor) *v1.Namespace {
 				constants.HncAnnotation: subNs.Namespace,
 			},
 			Labels: map[string]string{
+				constants.OwnerLabel: ownership.Project(project),
+
 				constants.HncIncludedNsLabel: "true",
 				fmt.Sprintf("%v%v.tree.hnc.x-k8s.io/depth", constants.ProjectNsPrefix, project): constants.HncProjectDepth,
 				fmt.Sprintf("%v%v.tree.hnc.x-k8s.io/depth", constants.TenantNsPrefix, tenant):   constants.HncTenantDepth,

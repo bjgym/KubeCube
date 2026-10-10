@@ -120,6 +120,12 @@ const (
 	// ProjectNsPrefix represent the namespace which relate with project
 	ProjectNsPrefix = "kubecube-project-"
 
+	// OwnerLabel records the single owner of a namespace, either the tenant or
+	// the project it belongs to. It is the authority for namespace ownership;
+	// the HNC protocol labels are derived data being retired. Reading and
+	// writing it lives in pkg/ownership.
+	OwnerLabel = "kubecube.io/owner"
+
 	// CubeQuotaLabel point to CubeResourceQuota
 	CubeQuotaLabel = "kubecube.io/quota"
 

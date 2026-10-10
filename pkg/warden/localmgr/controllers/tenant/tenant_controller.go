@@ -34,6 +34,7 @@ import (
 	v1 "github.com/kubecube-io/kubecube/pkg/apis/quota/v1"
 	tenantv1 "github.com/kubecube-io/kubecube/pkg/apis/tenant/v1"
 	"github.com/kubecube-io/kubecube/pkg/clog"
+	"github.com/kubecube-io/kubecube/pkg/ownership"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 	"github.com/kubecube-io/kubecube/pkg/utils/env"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -195,6 +196,8 @@ func (r *TenantReconciler) crateTenantNamespace(ctx context.Context, tenant stri
 			Name:        fmt.Sprintf("kubecube-tenant-%v", tenant),
 			Annotations: map[string]string{"hnc.x-k8s.io/ns": "true"},
 			Labels: map[string]string{
+				constants.OwnerLabel: ownership.Tenant(tenant),
+
 				constants.HncIncludedNsLabel:                                      "true",
 				fmt.Sprintf("kubecube-tenant-%v.tree.hnc.x-k8s.io/depth", tenant): "0",
 			},
