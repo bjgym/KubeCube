@@ -52,6 +52,13 @@ const (
 	LevelTenant  Level = "tenant"
 	LevelProject Level = "project"
 	LevelSpace   Level = "space"
+
+	// LevelSandbox is a namespace the platform owns for one agent session. It is
+	// owned by the project it was created for, so it inherits that project's
+	// quota chain, but it is not a space: SpaceSelector does not match it, so
+	// the readers that enumerate a project's spaces never see it and the console
+	// never offers it as somewhere to work.
+	LevelSandbox Level = "sandbox"
 )
 
 // The three keys. Label is the authority; the other two are derived from it and
@@ -109,6 +116,21 @@ func SpaceLabels(tenant, project string) map[string]string {
 		Label:     Project(project),
 		TenantKey: tenant,
 		LevelKey:  string(LevelSpace),
+	}
+}
+
+// SandboxLabels are the labels of a session's sandbox namespace.
+//
+// The owner is the project rather than a kind of its own, because that is what
+// makes the existing readers work on it: the ResourceQuota webhook selects on
+// the owner label, so a sandbox is admitted under its project's quota, and the
+// tenant key is what lets a tenant-scoped reader still resolve it. The level is
+// what keeps it out of the space enumerations, which select on level=space.
+func SandboxLabels(tenant, project string) map[string]string {
+	return map[string]string{
+		Label:     Project(project),
+		TenantKey: tenant,
+		LevelKey:  string(LevelSandbox),
 	}
 }
 
@@ -232,7 +254,7 @@ func Inconsistency(labels map[string]string) string {
 		if tenant == "" {
 			return fmt.Sprintf("is owned by project %s without recording the tenant it sits in", name)
 		}
-		if level != LevelProject && level != LevelSpace {
+		if level != LevelProject && level != LevelSpace && level != LevelSandbox {
 			return fmt.Sprintf("is owned by project %s but records level %q", name, level)
 		}
 	}

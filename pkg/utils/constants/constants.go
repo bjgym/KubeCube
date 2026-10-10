@@ -150,6 +150,13 @@ const (
 	// update and deletion, without consulting a name convention.
 	MaterializedFromLabel = "kubecube.io/materialized-from"
 
+	// EnvironmentLabel records where a place sits — prod, staging or dev — on a
+	// cluster, a project namespace or a space namespace. It is a threshold and
+	// never a boundary: it can loosen an approval or a quota cap, and it takes
+	// no part in deciding what may be written. A place that carries none is
+	// treated as production. Reading the chain lives in pkg/resourcegroup.
+	EnvironmentLabel = "kubecube.io/environment"
+
 	// CubeQuotaLabel point to CubeResourceQuota
 	CubeQuotaLabel = "kubecube.io/quota"
 
@@ -259,9 +266,11 @@ const (
 )
 
 const (
-	// AuthMappingCM auth configmap name
-	AuthMappingCM         = "kubecube-auth-mapping"
-	AuthPlatformMappingCM = "kubecube-auth-platform-mapping"
+	// AuthMappingCM is the configmap holding the permission catalogue: every
+	// grantable item and the levels it may be granted at. There is one of it —
+	// the second table, kubecube-auth-platform-mapping, is retired, and an item
+	// is visible at a level because its own entry says so.
+	AuthMappingCM = "kubecube-auth-mapping"
 )
 
 const (
