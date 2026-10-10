@@ -21,6 +21,7 @@ import (
 	admisson "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/kubecube-io/kubecube/pkg/utils/ctrlopts"
+	"github.com/kubecube-io/kubecube/pkg/warden/localmgr/controllers/alertconfig"
 	"github.com/kubecube-io/kubecube/pkg/warden/localmgr/controllers/crds"
 	"github.com/kubecube-io/kubecube/pkg/warden/localmgr/controllers/hotplug"
 	namespace "github.com/kubecube-io/kubecube/pkg/warden/localmgr/controllers/namespace"
@@ -77,6 +78,16 @@ func setupControllersWithManager(m *LocalManager, controllers string) error {
 
 	if ctrlopts.IsControllerEnabled("crd", ctrls) {
 		err = crds.SetupWithManager(m.Manager, m.PivotClient.Direct())
+		if err != nil {
+			return err
+		}
+	}
+
+	// materialises a project's alerting configuration into its spaces, which is
+	// what HNC's alertmanagerconfigs propagation did. It stands down by itself
+	// when the monitoring CRDs are not served.
+	if ctrlopts.IsControllerEnabled("alertconfig", ctrls) {
+		err = alertconfig.SetupWithManager(m.Manager)
 		if err != nil {
 			return err
 		}

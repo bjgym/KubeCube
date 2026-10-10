@@ -145,6 +145,11 @@ const (
 	// reliable way to tell them apart.
 	NamespaceOwnerLevelLabel = "kubecube.io/namespace-level"
 
+	// MaterializedFromLabel marks an object a controller copied out of the
+	// namespace named in its value. It is how the copies are found again for
+	// update and deletion, without consulting a name convention.
+	MaterializedFromLabel = "kubecube.io/materialized-from"
+
 	// CubeQuotaLabel point to CubeResourceQuota
 	CubeQuotaLabel = "kubecube.io/quota"
 
