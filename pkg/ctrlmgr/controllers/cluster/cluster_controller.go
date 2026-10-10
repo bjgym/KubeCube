@@ -18,11 +18,14 @@ package controllers
 
 import (
 	"context"
+	stderrors "errors"
 	"sync"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -48,11 +51,19 @@ var (
 
 const clusterFinalizer = "cluster.finalizers.kubecube.io"
 
+// dependenceJobRequeueInterval is how long the reconciler waits before looking
+// at a member cluster's bootstrap job again. It is short enough that a job which
+// finishes in seconds is picked up promptly, and it costs one read per pass.
+const dependenceJobRequeueInterval = 10 * time.Second
+
 // ClusterReconciler deploy warden to member cluster
 // when create event trigger
 type ClusterReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// recorder reports bootstrap progress on the Cluster object, so an operator
+	// can see why a cluster is not ready without reading the controller log.
+	recorder record.EventRecorder
 	// todo: remove this field in the future
 	pivotCluster *clusterv1.Cluster
 	// retryQueue holds all retrying cluster that has the way to stop retrying
@@ -73,6 +84,7 @@ func newReconciler(mgr manager.Manager, opts *options.Options) (*ClusterReconcil
 	r := &ClusterReconciler{
 		Client:                   mgr.GetClient(),
 		Scheme:                   mgr.GetScheme(),
+		recorder:                 mgr.GetEventRecorderFor("cluster-controller"),
 		Affected:                 make(chan event.GenericEvent),
 		ScoutWaitTimeoutSeconds:  opts.ScoutWaitTimeoutSeconds,
 		ScoutInitialDelaySeconds: opts.ScoutInitialDelaySeconds,
@@ -144,7 +156,16 @@ func (r *ClusterReconciler) syncCluster(ctx context.Context, cluster clusterv1.C
 	// deploy resources to cluster
 	err = deployResources(ctx, tempClient, &cluster, r.pivotCluster)
 	if err != nil {
+		if stderrors.Is(err, errDependenceJobRunning) {
+			// Not a failure. The bootstrap job is still running, so come back
+			// instead of holding this reconcile open for it; the cluster stays
+			// in its processing state until the job reports a result.
+			r.recorder.Event(&cluster, corev1.EventTypeNormal, "BootstrapInProgress",
+				"waiting for the install-dependence job in the member cluster")
+			return ctrl.Result{RequeueAfter: dependenceJobRequeueInterval}, nil
+		}
 		log.Error("deploy resource failed: %v", err)
+		r.recorder.Event(&cluster, corev1.EventTypeWarning, "BootstrapFailed", err.Error())
 		_ = utils.UpdateClusterStatusByState(ctx, r.Client, &cluster, clusterv1.ClusterInitFailed)
 		return ctrl.Result{}, err
 	}

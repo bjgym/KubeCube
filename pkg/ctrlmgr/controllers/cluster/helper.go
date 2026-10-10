@@ -20,14 +20,11 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -59,33 +56,6 @@ func createResource(ctx context.Context, obj client.Object, c client.Client, clu
 	log.Info("create %v %v to cluster %v success", objKind, obj.GetName(), cluster)
 
 	return nil
-}
-
-// waitForJobComplete block and wait until job meets completed
-func waitForJobComplete(ctx context.Context, cli client.Client, namespacedName types.NamespacedName) error {
-	isJobCompleted := func(j v1.Job) bool {
-		status := j.Status
-		for _, c := range status.Conditions {
-			if c.Status == corev1.ConditionTrue && c.Type == "Complete" {
-				return true
-			}
-		}
-		return false
-	}
-
-	return wait.PollUntilContextTimeout(ctx, 3*time.Second, 5*time.Minute, false, func(ctx context.Context) (done bool, err error) {
-		j := v1.Job{}
-		err = cli.Get(context.Background(), namespacedName, &j)
-		if err != nil {
-			// fetch job failed, abort and return error directly
-			return false, err
-		}
-		if isJobCompleted(j) {
-			clog.Info("install dependence job(%v/%v) meet completed", namespacedName.Namespace, namespacedName.Name)
-			return true, nil
-		}
-		return false, nil
-	})
 }
 
 func tryConnectCluster(cluster clusterv1.Cluster) (client.Client, error) {

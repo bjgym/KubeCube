@@ -18,7 +18,9 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	clusterv1 "github.com/kubecube-io/kubecube/pkg/apis/cluster/v1"
 	v1 "k8s.io/api/admissionregistration/v1"
@@ -27,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -110,16 +113,15 @@ func deployResources(ctx context.Context, cli client.Client, memberCluster, pivo
 		}
 
 		// install dependence into target cluster by job
-		prevJob := makePrevJob()
-		err = createResource(ctx, prevJob, cli, memberCluster.Name, "job")
+		done, err := ensureDependenceJob(ctx, cli, memberCluster.Name)
 		if err != nil {
 			return err
 		}
-
-		// wait until job complete
-		err = waitForJobComplete(ctx, cli, types.NamespacedName{Name: prevJob.Name, Namespace: prevJob.Namespace})
-		if err != nil {
-			return err
+		if !done {
+			// The job has not reported a result yet. End this pass and let the
+			// reconciler come back: holding it open here stalled onboarding for
+			// up to five minutes and told the operator nothing.
+			return errDependenceJobRunning
 		}
 	}
 
@@ -433,6 +435,106 @@ func makePrevJob() *batchv1.Job {
 			},
 		},
 	}
+}
+
+// dependenceJobTimeout bounds how long a member cluster's bootstrap job may run
+// before the platform calls it failed. It is the same five minutes the
+// reconcile used to spend blocked inside a poll, now named, and now a reason an
+// operator can read instead of a bare context deadline.
+const dependenceJobTimeout = 5 * time.Minute
+
+// errDependenceJobRunning means the bootstrap job has not reported a result yet.
+// It is not a failure: the caller requeues and comes back rather than holding
+// the reconcile open for it.
+var errDependenceJobRunning = errors.New("install-dependence job is still running")
+
+// dependenceJobState is what the bootstrap job is, as far as one read can tell.
+type dependenceJobState int
+
+const (
+	// dependenceJobAbsent means the job has not been created yet.
+	dependenceJobAbsent dependenceJobState = iota
+	// dependenceJobRunning means it exists and has not reported a result.
+	dependenceJobRunning
+	// dependenceJobSucceeded means it completed.
+	dependenceJobSucceeded
+	// dependenceJobFailed means it reported a failure, or ran past its bound.
+	dependenceJobFailed
+)
+
+// readDependenceJob reports the state of the bootstrap job without waiting for
+// it, plus a reason when it failed. The job mutates a member cluster's control
+// plane, so the platform must wait for a result rather than assume one; what it
+// must not do is the waiting inside a reconcile, where the operator sees
+// nothing for five minutes and the cluster sits in a processing state.
+func readDependenceJob(ctx context.Context, cli client.Client, name types.NamespacedName) (dependenceJobState, string, error) {
+	job := batchv1.Job{}
+	if err := cli.Get(ctx, name, &job); err != nil {
+		if apierrors.IsNotFound(err) {
+			return dependenceJobAbsent, "", nil
+		}
+		return dependenceJobAbsent, "", err
+	}
+
+	for _, c := range job.Status.Conditions {
+		if c.Status != corev1.ConditionTrue {
+			continue
+		}
+		switch c.Type {
+		case batchv1.JobComplete:
+			return dependenceJobSucceeded, "", nil
+		case batchv1.JobFailed:
+			return dependenceJobFailed, fmt.Sprintf("%v: %v", c.Reason, c.Message), nil
+		}
+	}
+
+	// A job that has run past its bound is a failure even though it has not said
+	// so. Without this the reconcile would requeue forever on a job that never
+	// reports, which would be worse than the timeout this replaced.
+	started := job.CreationTimestamp.Time
+	if job.Status.StartTime != nil {
+		started = job.Status.StartTime.Time
+	}
+	if !started.IsZero() && time.Since(started) > dependenceJobTimeout {
+		return dependenceJobFailed, fmt.Sprintf("still running after %s", dependenceJobTimeout), nil
+	}
+
+	return dependenceJobRunning, "", nil
+}
+
+// ensureDependenceJob creates the bootstrap job when the cluster has none and
+// reports whether it has finished. It never waits, and it never re-creates a
+// job that already reported a result, so a cluster that has been bootstrapped is
+// not bootstrapped a second time by a later reconcile.
+func ensureDependenceJob(ctx context.Context, cli client.Client, cluster string) (bool, error) {
+	if env.DependenceJobImage() == "" {
+		return false, fmt.Errorf("DEPENDENCE_JOB_IMAGE is empty, refusing to bootstrap cluster %v with an image that does not exist", cluster)
+	}
+
+	job := makePrevJob()
+	name := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
+
+	state, reason, err := readDependenceJob(ctx, cli, name)
+	if err != nil {
+		return false, err
+	}
+
+	switch state {
+	case dependenceJobSucceeded:
+		clog.Info("install dependence job(%v/%v) meet completed", name.Namespace, name.Name)
+		return true, nil
+	case dependenceJobFailed:
+		return false, fmt.Errorf("install dependence job(%v/%v) failed: %v", name.Namespace, name.Name, reason)
+	case dependenceJobRunning:
+		clog.Info("install dependence job(%v/%v) is still running", name.Namespace, name.Name)
+		return false, nil
+	}
+
+	if err := createResource(ctx, job, cli, cluster, "job"); err != nil {
+		return false, err
+	}
+
+	return false, nil
 }
 
 func makeWardenSvc() *corev1.Service {
