@@ -22,9 +22,7 @@ import (
 	"sort"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/retry"
@@ -33,25 +31,8 @@ import (
 	tenantv1 "github.com/kubecube-io/kubecube/pkg/apis/tenant/v1"
 	userv1 "github.com/kubecube-io/kubecube/pkg/apis/user/v1"
 	"github.com/kubecube-io/kubecube/pkg/clog"
-	"github.com/kubecube-io/kubecube/pkg/ownership"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 )
-
-func SubNs2Ns(subNs *SubnamespaceAnchor) *v1.Namespace {
-	if subNs.Labels == nil {
-		return nil
-	}
-
-	tenant := subNs.Labels[constants.TenantLabel]
-	project := subNs.Labels[constants.ProjectLabel]
-
-	return &v1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   subNs.Name,
-			Labels: ownership.SpaceLabels(tenant, project),
-		},
-	}
-}
 
 func TransBinding(labels map[string]string, sub rbacv1.Subject, ref rbacv1.RoleRef) (scopeType string, scopeName string, role string, user string, err error) {
 	if labels == nil {

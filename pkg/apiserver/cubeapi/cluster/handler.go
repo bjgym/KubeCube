@@ -625,9 +625,9 @@ func (h *handler) registerCluster(c *gin.Context) {
 }
 
 type nsAndQuota struct {
-	Cluster            string                         `json:"cluster"`
-	SubNamespaceAnchor *transition.SubnamespaceAnchor `json:"subNamespaceAnchor"`
-	ResourceQuota      *v1.ResourceQuota              `json:"resourceQuota"`
+	Cluster       string                   `json:"cluster"`
+	Space         *transition.SpaceRequest `json:"space"`
+	ResourceQuota *v1.ResourceQuota        `json:"resourceQuota"`
 }
 
 // createNsAndQuota create quota when rbac was spread to new namespace
@@ -651,7 +651,7 @@ func (h *handler) createNsAndQuota(c *gin.Context) {
 	cli := clients.Interface().Kubernetes(data.Cluster)
 	ctx := c.Request.Context()
 
-	ns := transition.SubNs2Ns(data.SubNamespaceAnchor)
+	ns := data.Space.Namespace()
 	if ns == nil {
 		response.FailReturn(c, errcode.InvalidBodyFormat)
 		return
@@ -697,12 +697,12 @@ func (h *handler) createNsAndQuota(c *gin.Context) {
 	count := 0
 	for toWait {
 		if count == retryCount {
-			clog.Warn("the rolebindings did not reach namespace %s within %v retries", data.SubNamespaceAnchor.Name, retryCount)
+			clog.Warn("the rolebindings did not reach namespace %s within %v retries", data.Space.Name, retryCount)
 			break
 		}
 
 		list := &rbacv1.RoleBindingList{}
-		err = cli.Direct().List(ctx, list, &client.ListOptions{Namespace: data.SubNamespaceAnchor.Name})
+		err = cli.Direct().List(ctx, list, &client.ListOptions{Namespace: data.Space.Name})
 		if err != nil {
 			rollback()
 			response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
@@ -724,7 +724,7 @@ func (h *handler) createNsAndQuota(c *gin.Context) {
 	}
 
 	clog.Debug("user %v create ns %v and resourceQuota %v in cluster %v success",
-		username, data.SubNamespaceAnchor.Name, data.ResourceQuota.Name, data.Cluster)
+		username, data.Space.Name, data.ResourceQuota.Name, data.Cluster)
 
 	response.SuccessJsonReturn(c, "success")
 }

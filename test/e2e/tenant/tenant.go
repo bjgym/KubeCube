@@ -28,7 +28,6 @@ import (
 	"github.com/kubecube-io/kubecube/pkg/clients"
 	"github.com/kubecube-io/kubecube/pkg/multicluster/client"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
-	"github.com/kubecube-io/kubecube/pkg/utils/transition"
 	"github.com/kubecube-io/kubecube/test/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
 	v1 "k8s.io/api/core/v1"
@@ -124,30 +123,14 @@ var _ = ginkgo.Describe("Test Tenant and Project", func() {
 			framework.ExpectEqual(int32(403), statusErr.Code)
 		})
 
-		ginkgo.It("delete project after delete .spec.namespace", func() {
-			// delete subnamespace
-			url := fmt.Sprintf("/proxy/clusters/pivot-cluster/apis/hnc.x-k8s.io/v1alpha2/namespaces/%s/subnamespaceanchors/%s", constants.TenantNsPrefix+tenantName, constants.ProjectNsPrefix+projectName)
+		// The platform deletes the tree from the top now: a project's namespace is
+		// what its spaces live in, and warden removes it once the project is gone.
+		// The webhooks used to refuse the delete until the namespaces had been
+		// removed by hand; they warn instead, because a refusal deadlocks the
+		// cascade that deletes a project while its spaces still exist.
+		ginkgo.It("delete project cascades to its namespace", func() {
+			url := "/proxy/clusters/pivot-cluster/apis/tenant.kubecube.io/v1/projects/" + projectName
 			req := f.HttpHelper.Delete(f.HttpHelper.FormatUrl(url))
-			r, err := f.HttpHelper.Client.Do(&req)
-			framework.ExpectNoError(err)
-			b, err := io.ReadAll(r.Body)
-			framework.ExpectNoError(err)
-			var subns transition.SubnamespaceAnchor
-			err = json.Unmarshal(b, &subns)
-			framework.ExpectNoError(err)
-			framework.ExpectEqual(constants.ProjectNsPrefix+projectName, subns.Name)
-			// wait namespace deleted
-			err = wait.PollUntilContextTimeout(context.Background(), f.Timeouts.WaitInterval, f.Timeouts.WaitTimeout, false, func(ctx context.Context) (bool, error) {
-				var ns v1.Namespace
-				err := cli.Direct().Get(ctx, types.NamespacedName{Name: constants.ProjectNsPrefix + projectName}, &ns)
-				if err != nil && apierrors.IsNotFound(err) {
-					return true, nil
-				}
-				return false, nil
-			})
-			framework.ExpectNoError(err)
-			url = "/proxy/clusters/pivot-cluster/apis/tenant.kubecube.io/v1/projects/" + projectName
-			req = f.HttpHelper.Delete(f.HttpHelper.FormatUrl(url))
 			resp, err := f.HttpHelper.Client.Do(&req)
 			framework.ExpectNoError(err)
 			defer resp.Body.Close()
@@ -157,9 +140,20 @@ var _ = ginkgo.Describe("Test Tenant and Project", func() {
 			err = json.Unmarshal(body, &status)
 			framework.ExpectNoError(err)
 			framework.ExpectEqual("Success", status.Status)
+
+			// warden deletes the project's spaces and then its namespace
+			err = wait.PollUntilContextTimeout(context.Background(), f.Timeouts.WaitInterval, f.Timeouts.WaitTimeout, false, func(ctx context.Context) (bool, error) {
+				var ns v1.Namespace
+				err := cli.Direct().Get(ctx, types.NamespacedName{Name: constants.ProjectNsPrefix + projectName}, &ns)
+				if err != nil && apierrors.IsNotFound(err) {
+					return true, nil
+				}
+				return false, nil
+			})
+			framework.ExpectNoError(err)
 		})
 
-		ginkgo.It("delete tenant before delete .spec.namespace", func() {
+		ginkgo.It("delete tenant cascades to its projects", func() {
 			url := "/proxy/clusters/pivot-cluster/apis/tenant.kubecube.io/v1/tenants/" + tenantName
 			req := f.HttpHelper.Delete(f.HttpHelper.FormatUrl(url))
 			resp, err := f.HttpHelper.Client.Do(&req)
@@ -167,10 +161,22 @@ var _ = ginkgo.Describe("Test Tenant and Project", func() {
 			defer resp.Body.Close()
 			body, err := io.ReadAll(resp.Body)
 			framework.ExpectNoError(err)
-			var statusErr metav1.Status
-			err = json.Unmarshal(body, &statusErr)
+			var status metav1.Status
+			err = json.Unmarshal(body, &status)
 			framework.ExpectNoError(err)
-			framework.ExpectEqual(int32(403), statusErr.Code)
+			framework.ExpectEqual("Success", status.Status)
+
+			// the tenant namespace is the parent of the project namespaces, so it
+			// can only go once they have
+			err = wait.PollUntilContextTimeout(context.Background(), f.Timeouts.WaitInterval, f.Timeouts.WaitTimeout, false, func(ctx context.Context) (bool, error) {
+				var ns v1.Namespace
+				err := cli.Direct().Get(ctx, types.NamespacedName{Name: constants.TenantNsPrefix + tenantName}, &ns)
+				if err != nil && apierrors.IsNotFound(err) {
+					return true, nil
+				}
+				return false, nil
+			})
+			framework.ExpectNoError(err)
 		})
 
 		ginkgo.It("delete tenant after delete .spec.namespace", func() {
