@@ -45,6 +45,11 @@ import (
 // namespace is never left with neither.
 type Reconciler struct {
 	client.Client
+
+	// reader reads straight from the API server, so that listing the objects HNC
+	// propagated into a namespace does not put every Secret in the cluster into
+	// the cache.
+	reader client.Reader
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -82,7 +87,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	stripped := stripRetired(patch)
 	if stripped == 0 {
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.stripPropagated(ctx, ns.Name)
 	}
 
 	if err := r.Patch(ctx, patch, client.MergeFrom(ns)); err != nil {
@@ -90,7 +95,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	clog.Info("removed %v retired protocol field(s) from namespace %v", stripped, ns.Name)
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, r.stripPropagated(ctx, ns.Name)
 }
 
 // parentOf resolves the namespace the subnamespace annotation points at, which
@@ -114,5 +119,5 @@ func (r *Reconciler) parentOf(ctx context.Context, ns *corev1.Namespace) *corev1
 func SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Namespace{}).
-		Complete(&Reconciler{Client: mgr.GetClient()})
+		Complete(&Reconciler{Client: mgr.GetClient(), reader: mgr.GetAPIReader()})
 }
