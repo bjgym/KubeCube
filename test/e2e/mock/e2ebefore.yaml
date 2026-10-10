@@ -19,12 +19,16 @@ spec:
   displayName: my-project
   description: my-project
 ---
-## namespace -subnamespaceanchor
-apiVersion: hnc.x-k8s.io/v1alpha2
-kind: SubnamespaceAnchor
+## space - the namespace itself. It used to be a subnamespace anchor that HNC
+## turned into a namespace; the platform creates the namespace directly now.
+apiVersion: v1
+kind: Namespace
 metadata:
   name: e2e-ns
-  namespace: kubecube-project-e2e-project
+  labels:
+    kubecube.io/namespace-owner: project:e2e-project
+    kubecube.io/namespace-tenant: e2e-tenant
+    kubecube.io/namespace-level: space
 ---
 ## user
 apiVersion: user.kubecube.io/v1

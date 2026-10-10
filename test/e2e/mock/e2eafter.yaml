@@ -1,17 +1,11 @@
 ---
-## namespace -subnamespaceanchor
-apiVersion: hnc.x-k8s.io/v1alpha2
-kind: SubnamespaceAnchor
+## space - the namespace, which the platform creates directly. It used to be a
+## subnamespace anchor; deleting that is what removed the namespace, so the
+## cleanup names the namespace now.
+apiVersion: v1
+kind: Namespace
 metadata:
   name: e2e-ns
-  namespace: kubecube-project-e2e-project
----
-## project -subnamespaceanchor
-apiVersion: hnc.x-k8s.io/v1alpha2
-kind: SubnamespaceAnchor
-metadata:
-  name: kubecube-project-e2e-project
-  namespace: kubecube-tenant-e2e-tenant
 ---
 ## project
 apiVersion: tenant.kubecube.io/v1
