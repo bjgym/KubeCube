@@ -13,8 +13,16 @@ webhooks:
         namespace: kubecube-system
         port: 8443
         path: /validate-core-kubernetes-v1-resource-quota
-    failurePolicy: Fail
+    # This is the one webhook that acts on a core object, so it is the one that
+    # must not be able to stop the cluster: a failure to reach warden lets the
+    # write through, and the selector keeps it to the namespaces the platform
+    # owns rather than every ResourceQuota in the cluster.
+    failurePolicy: Ignore
     name: vresourcequota.kb.io
+    namespaceSelector:
+      matchExpressions:
+        - key: kubecube.io/namespace-owner
+          operator: Exists
     rules:
       - apiGroups:
           - ""

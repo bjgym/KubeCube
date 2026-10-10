@@ -62,7 +62,10 @@ webhooks:
         namespace: kubecube-system
         port: 9443
         path: /validate-cluster-kubecube-io-v1-cluster
-    failurePolicy: Fail
+    # A cluster registration that cannot reach the webhook is admitted: refusing
+    # it would make the platform unable to onboard a cluster while the platform
+    # itself is the thing being repaired.
+    failurePolicy: Ignore
     name: vcluster.kb.io
     rules:
       - apiGroups:

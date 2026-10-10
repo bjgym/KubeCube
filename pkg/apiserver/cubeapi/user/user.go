@@ -565,6 +565,19 @@ func GetKubeConfig(c *gin.Context) {
 		return
 	}
 	clusters := multicluster.Interface().FuzzyCopy()
+
+	// A cloud shell session asks for the cluster it was opened for, and must not
+	// receive the other clusters' contexts. Without the parameter the response
+	// keeps carrying one context per managed cluster.
+	if clusterName := c.Query("cluster"); clusterName != "" {
+		fuzzyCluster, ok := clusters[clusterName]
+		if !ok {
+			response.FailReturn(c, errcode.BadRequest(fmt.Errorf("cluster %v not found", clusterName)))
+			return
+		}
+		clusters = map[string]*multicluster.FuzzyCluster{clusterName: fuzzyCluster}
+	}
+
 	cms := make([]*kubeconfig.ConfigMeta, 0, len(clusters))
 
 	for _, cluster := range clusters {

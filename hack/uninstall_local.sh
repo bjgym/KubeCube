@@ -17,8 +17,27 @@
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "${REPO_ROOT}"
 
-kubectl delete -f deploy/manifests
-kubectl delete -f deploy/metrics-server.yaml
-kubectl delete ns kubecube-system
+# The same two halves the install applies, in reverse: what the chart renders
+# and what makes a local run local. deploy/manifests/rbac, cubeWebhook's
+# siblings and the two configmaps that used to live here are gone — the chart
+# is their only source.
+CHART_DIR="${KUBECUBE_CHART_DIR:-${REPO_ROOT}/../kubecube-chart}"
+
+helm template kubecube "${CHART_DIR}" \
+  --namespace kubecube-system \
+  --set-string global.componentsEnable.kubecube=true \
+  --set-string global.componentsEnable.warden=true \
+  --show-only templates/clusterrole.yaml \
+  --show-only templates/clusterrolebind.yaml \
+  --show-only templates/serviceaccount.yaml \
+  --show-only templates/kubecube/auth-configmap.yaml \
+  --show-only templates/kubecube/auth-mapping-configmap.yaml \
+  --show-only templates/kubecube/feature-configmap.yaml \
+  --show-only templates/kubecube/language-configmap.yaml \
+  | kubectl delete -f - --ignore-not-found
+
+kubectl delete -f deploy/manifests --ignore-not-found
+kubectl delete -f deploy/metrics-server.yaml --ignore-not-found
+kubectl delete ns kubecube-system --ignore-not-found
 
 make uninstall

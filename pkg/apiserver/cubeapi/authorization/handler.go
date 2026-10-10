@@ -65,8 +65,13 @@ func (h *handler) AddApisTo(root *gin.Engine) {
 	r.POST("resources", h.resourcesGate)
 	r.GET("authitems/:clusterrole", h.getAuthItems)
 	r.GET("authitems", h.getAuthItemsByLabelSelector)
-	r.POST("authitems", h.setAuthItems)
 	r.POST("authitems/permissions", h.getPermissions)
+	// The catalogue is what may be granted; a role is written from it. The two
+	// replaced POST authitems, which took a rule set from the caller.
+	r.GET("catalogue", h.getCatalogue)
+	r.GET("roles/:name", h.getRoleItems)
+	// 写权限与读权限不是同一件事：读告诉你自己能做什么，写决定所有人能做什么。
+	r.PUT("roles/:name", h.requirePlatformAdmin(), h.setRoleItems)
 	r.GET("deamonsets/level", h.getDaemonSetsLevel)
 	r.GET("members", h.getScopeMembers)
 	r.DELETE("members", h.delScopeMembers)
@@ -80,6 +85,7 @@ type result struct {
 type handler struct {
 	rbac.Interface
 	mgrclient.Client
+	catalogue      *mapping.Catalogue
 	cmData         map[string]string
 	platformCmData map[string]string
 }
@@ -96,15 +102,18 @@ func NewHandler() *handler {
 		clog.Fatal("get auth item configmap %v failed: %v", nn, err)
 	}
 
-	platformCm := corev1.ConfigMap{}
-	nn1 := types.NamespacedName{Name: constants.AuthPlatformMappingCM, Namespace: env.CubeNamespace()}
-	err = h.Client.Direct().Get(context.Background(), nn1, &platformCm)
+	// One catalogue, read once. The two views below are the same definition seen
+	// from two levels rather than two tables: an item is visible where its own
+	// levels allow it, so which table to read is no longer a question a role's
+	// label answers.
+	catalogue, err := mapping.ParseCatalogue(cm.Data)
 	if err != nil {
-		clog.Fatal("get platform auth item configmap %v failed: %v", nn1, err)
+		clog.Fatal("read the auth catalogue %v failed: %v", nn, err)
 	}
 
-	h.cmData = cm.Data
-	h.platformCmData = platformCm.Data
+	h.catalogue = catalogue
+	h.cmData = catalogue.FlatItemsAt(mapping.LevelTenant, mapping.LevelProject)
+	h.platformCmData = catalogue.FlatItemsAt(mapping.LevelPlatform)
 
 	return h
 }
@@ -173,58 +182,126 @@ func (h *handler) getAuthItems(c *gin.Context) {
 	response.SuccessReturn(c, roleAuths)
 }
 
-// setAuthItems transfer auth item to ClusterRole into k8s.
-func (h *handler) setAuthItems(c *gin.Context) {
-	body := &mapping.RoleAuthBody{}
+// getCatalogue answers what may be granted, and at which levels.
+//
+// It is the list a console renders. A role's own items decide which boxes are
+// ticked; they never decide which boxes exist, which is why this endpoint does
+// not depend on the caller or on any role.
+func (h *handler) getCatalogue(c *gin.Context) {
+	if h.catalogue == nil {
+		response.FailReturn(c, errcode.BadRequest(fmt.Errorf("the permission catalogue was not read")))
+		return
+	}
+	response.SuccessReturn(c, h.catalogue)
+}
+
+// getRoleItems answers which items one role holds.
+//
+// The items are reported against the whole catalogue, not against one level's
+// view, so a console can render every box there is and tick the ones this role
+// holds: which boxes exist is the catalogue's answer, and it does not depend on
+// the role, on its labels or on who is asking.
+func (h *handler) getRoleItems(c *gin.Context) {
+	name := c.Param("name")
+	if strings.TrimSpace(name) == "" {
+		response.FailReturn(c, errcode.InvalidBodyFormat)
+		return
+	}
+	if h.catalogue == nil {
+		response.FailReturn(c, errcode.BadRequest(fmt.Errorf("the permission catalogue was not read")))
+		return
+	}
+
+	clusterRole := &rbacv1.ClusterRole{}
+	if err := h.Cache().Get(context.Background(), types.NamespacedName{Name: name}, clusterRole); err != nil {
+		response.FailReturn(c, errcode.BadRequest(err))
+		return
+	}
+
+	everyLevel := h.catalogue.FlatItemsAt(mapping.LevelPlatform, mapping.LevelTenant, mapping.LevelProject)
+	held := mapping.ClusterRoleMapping(clusterRole, everyLevel, false)
+
+	items := make(map[string]mapping.VerbRepresent, len(held.AuthItems))
+	for item, detail := range held.AuthItems {
+		items[item] = detail.Verb
+	}
+
+	response.SuccessReturn(c, &mapping.RoleItemsBody{
+		// What the server wrote down when the role was saved. It is reported for
+		// display; nothing here is decided from it.
+		Scope: clusterRole.Labels[constants.RoleLabel],
+		Items: items,
+	})
+}
+
+// setRoleItems writes a role from the items a person chose.
+//
+// The body carries items and a level, never rules: the rules are derived here
+// from the catalogue, so a caller selects from a list the deployment defines
+// rather than inventing one. An item the catalogue does not hold, or one the
+// level does not allow, refuses the whole request — a role that quietly lost an
+// item is a permission nobody can explain afterwards.
+func (h *handler) setRoleItems(c *gin.Context) {
+	name := c.Param("name")
+	if strings.TrimSpace(name) == "" {
+		response.FailReturn(c, errcode.InvalidBodyFormat)
+		return
+	}
+
+	// An empty set is a role that grants nothing yet, which is what creating a
+	// role and ticking its boxes afterwards means. What is refused is a body
+	// that names no scope, not a body that names no permission.
+	body := &mapping.RoleItemsBody{}
 	if err := c.ShouldBindJSON(body); err != nil {
 		response.FailReturn(c, errcode.InvalidBodyFormat)
 		return
 	}
 
-	if len(body.ClusterRoleName) == 0 || len(body.AuthItems) == 0 {
-		response.FailReturn(c, errcode.InvalidBodyFormat)
-		return
-	}
-
-	var cmData map[string]string
-
-	clusterRole := &rbacv1.ClusterRole{}
-	err := h.Cache().Get(context.Background(), types.NamespacedName{Name: body.ClusterRoleName}, clusterRole)
-	if err != nil && !errors.IsNotFound(err) {
+	level, err := mapping.LevelOf(body.Scope)
+	if err != nil {
 		response.FailReturn(c, errcode.BadRequest(err))
 		return
 	}
 
-	labels := map[string]string{constants.RbacLabel: "true"}
-	annotations := map[string]string{constants.SyncAnnotation: "true"}
-	if errors.IsNotFound(err) {
-		if body.Scope == constants.ClusterRolePlatform {
-			labels[constants.RoleLabel] = constants.ClusterRolePlatform
-			cmData = h.platformCmData
-		}
-		if body.Scope == constants.ClusterRoleTenant {
-			labels[constants.RoleLabel] = constants.ClusterRoleTenant
-			cmData = h.cmData
-		}
-		if body.Scope == constants.ClusterRoleProject {
-			labels[constants.RoleLabel] = constants.ClusterRoleProject
-			cmData = h.cmData
-		}
-	} else {
-		if isPlatformRole(clusterRole.Labels) {
-			cmData = h.platformCmData
-		} else {
-			cmData = h.cmData
-		}
+	clusterRole := &rbacv1.ClusterRole{}
+	err = h.Cache().Get(context.Background(), types.NamespacedName{Name: name}, clusterRole)
+	if err != nil && !errors.IsNotFound(err) {
+		response.FailReturn(c, errcode.BadRequest(err))
+		return
+	}
+	exists := err == nil
+
+	newClusterRole, err := mapping.DeriveRole(h.catalogue, level, name, body.Items)
+	if err != nil {
+		response.FailReturn(c, errcode.BadRequest(err))
+		return
 	}
 
-	newClusterRole := mapping.RoleAuthMapping(body, cmData)
-	newClusterRole.Annotations = annotations
+	// What the role already carried is kept, and only this platform's own
+	// markers are set: a label somebody else put on the role is not this
+	// endpoint's to remove.
+	labels := map[string]string{}
+	annotations := map[string]string{}
+	if exists {
+		for k, v := range clusterRole.Labels {
+			labels[k] = v
+		}
+		for k, v := range clusterRole.Annotations {
+			annotations[k] = v
+		}
+	}
+	labels[constants.RbacLabel] = "true"
+	labels[constants.RoleLabel] = string(level)
+	annotations[constants.SyncAnnotation] = "true"
+
 	newClusterRole.Labels = labels
+	newClusterRole.Annotations = annotations
 	runtimeObject := newClusterRole.DeepCopy()
 
 	_, err = controllerruntime.CreateOrUpdate(context.Background(), h.Client.Direct(), runtimeObject, func() error {
 		runtimeObject.Rules = newClusterRole.Rules
+		runtimeObject.Labels = newClusterRole.Labels
+		runtimeObject.Annotations = newClusterRole.Annotations
 		return nil
 	})
 	if err != nil {
@@ -690,6 +767,19 @@ func (h *handler) createBinds(c *gin.Context) {
 		return
 	}
 
+	// A binding grants a role inside a scope, so the caller has to administer
+	// that scope: a tenant administrator binding somebody into another tenant is
+	// the mistake this refuses.
+	caller, err := h.callerOf(c)
+	if err != nil {
+		response.FailReturn(c, errcode.BadRequest(err))
+		return
+	}
+	if !h.reachesScope(caller, scopeType, scopeName) {
+		response.FailReturn(c, errcode.ForbiddenErr)
+		return
+	}
+
 	// add user scope binding
 	u := &user.User{}
 	err = cli.Cache().Get(ctx, types.NamespacedName{Name: userName}, u)
@@ -744,6 +834,17 @@ func (h *handler) deleteBinds(c *gin.Context) {
 	scopeType, scopeName, role, userName, err := transition.TransBinding(roleBinding.Labels, roleBinding.Subjects[0], roleBinding.RoleRef)
 	if err != nil {
 		response.FailReturn(c, errcode.InvalidBodyFormat)
+		return
+	}
+
+	// Removing a binding is the same authority as making one.
+	caller, err := h.callerOf(c)
+	if err != nil {
+		response.FailReturn(c, errcode.BadRequest(err))
+		return
+	}
+	if !h.reachesScope(caller, scopeType, scopeName) {
+		response.FailReturn(c, errcode.ForbiddenErr)
 		return
 	}
 

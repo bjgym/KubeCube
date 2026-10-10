@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -35,6 +36,8 @@ import (
 	"github.com/kubecube-io/kubecube/pkg/clog"
 	mgrclient "github.com/kubecube-io/kubecube/pkg/multicluster/client"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
+	"github.com/kubecube-io/kubecube/pkg/utils/errcode"
+	"github.com/kubecube-io/kubecube/pkg/utils/response"
 	rbacv1 "k8s.io/api/rbac/v1"
 )
 
@@ -257,6 +260,81 @@ func isPlatformRole(labels map[string]string) bool {
 		return false
 	}
 	return labels[constants.RoleLabel] == constants.ClusterRolePlatform
+}
+
+// callerOf reads the user making a request.
+func (h *handler) callerOf(c *gin.Context) (*userv1.User, error) {
+	name := c.GetString(constants.UserName)
+	if name == "" {
+		return nil, fmt.Errorf("the request carries no user")
+	}
+
+	caller := &userv1.User{}
+	if err := h.Cache().Get(c.Request.Context(), types.NamespacedName{Name: name}, caller); err != nil {
+		return nil, err
+	}
+	return caller, nil
+}
+
+// requirePlatformAdmin refuses a request from anybody but a platform
+// administrator.
+//
+// It guards the endpoints that write permissions, which are not like the reads
+// beside them: a read tells you what you may do, and a write decides what
+// everybody may do.
+func (h *handler) requirePlatformAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		caller, err := h.callerOf(c)
+		if err != nil {
+			response.FailReturn(c, errcode.BadRequest(err))
+			c.Abort()
+			return
+		}
+		if !isPlatformAdmin(caller) {
+			response.FailReturn(c, errcode.ForbiddenErr)
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// reachesScope reports whether what the caller administers contains one scope.
+//
+// A platform administrator reaches everything. Anyone else reaches the scopes
+// they hold a binding for, and a tenant administrator also reaches that
+// tenant's projects: that is the one nesting the platform has, and it is what a
+// member page needs when it grants a role inside a project.
+func (h *handler) reachesScope(caller *userv1.User, scopeType, scopeName string) bool {
+	if caller == nil {
+		return false
+	}
+	if isPlatformAdmin(caller) {
+		return true
+	}
+
+	for _, binding := range caller.Spec.ScopeBindings {
+		if string(binding.ScopeType) == scopeType && binding.ScopeName == scopeName {
+			return true
+		}
+		if binding.ScopeType == userv1.TenantScope && scopeType == string(userv1.ProjectScope) &&
+			h.tenantOfProject(scopeName) == binding.ScopeName {
+			return true
+		}
+	}
+
+	return false
+}
+
+// tenantOfProject reads the tenant a project belongs to. The label is the
+// authority the project type already prints.
+func (h *handler) tenantOfProject(name string) string {
+	project := &tenantv1.Project{}
+	if err := h.Cache().Get(context.Background(), types.NamespacedName{Name: name}, project); err != nil {
+		clog.Error("read project %s while checking a binding: %v", name, err)
+		return ""
+	}
+	return project.Labels[constants.TenantLabel]
 }
 
 func GetVisibleTenants(ctx context.Context, cli mgrclient.Client, username string) ([]tenantv1.Tenant, error) {
