@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -159,13 +158,12 @@ func (r *ProjectReconciler) deleteProject(projectName string) (ctrl.Result, erro
 }
 
 func (r *ProjectReconciler) deleteSubNSOfProject(projectName string) error {
-	lbSelector, err := labels.Parse(fmt.Sprintf("%v%v.tree.hnc.x-k8s.io/depth=1", constants.ProjectNsPrefix, projectName))
-	if err != nil {
-		return err
-	}
+	// the project's spaces, not the project's own namespace: the caller deletes
+	// that one after its children
+	lbSelector := ownership.SpaceSelector(projectName)
 
 	nsList := &v1.NamespaceList{}
-	err = r.List(context.TODO(), nsList, &client.ListOptions{LabelSelector: lbSelector})
+	err := r.List(context.TODO(), nsList, &client.ListOptions{LabelSelector: lbSelector})
 	if err != nil {
 		return err
 	}
@@ -205,9 +203,6 @@ func (r *ProjectReconciler) crateProjectNamespace(ctx context.Context, tenant, p
 			Name:        fmt.Sprintf("kubecube-project-%v", project),
 			Annotations: map[string]string{constants.HncAnnotation: fmt.Sprintf("kubecube-tenant-%v", tenant)},
 			Labels: map[string]string{
-				constants.OwnerLabel:       ownership.Project(project),
-				constants.OwnerTenantLabel: tenant,
-
 				constants.HncIncludedNsLabel:                                        "true",
 				fmt.Sprintf("kubecube-project-%v.tree.hnc.x-k8s.io/depth", project): "0",
 				fmt.Sprintf("kubecube-tenant-%v.tree.hnc.x-k8s.io/depth", tenant):   "1",
@@ -215,6 +210,10 @@ func (r *ProjectReconciler) crateProjectNamespace(ctx context.Context, tenant, p
 				constants.HncTenantLabel:                                            tenant,
 			},
 		},
+	}
+
+	for k, v := range ownership.ProjectLabels(tenant, project) {
+		ns.Labels[k] = v
 	}
 
 	err := r.Create(ctx, ns)

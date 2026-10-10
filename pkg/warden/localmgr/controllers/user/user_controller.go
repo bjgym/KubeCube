@@ -40,6 +40,7 @@ import (
 	userv1 "github.com/kubecube-io/kubecube/pkg/apis/user/v1"
 	"github.com/kubecube-io/kubecube/pkg/clog"
 	"github.com/kubecube-io/kubecube/pkg/ctrlmgr/options"
+	"github.com/kubecube-io/kubecube/pkg/ownership"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 	"github.com/kubecube-io/kubecube/pkg/utils/hash"
 	"github.com/kubecube-io/kubecube/pkg/utils/transition"
@@ -387,24 +388,22 @@ func (r *UserReconciler) bindingsGc(ctx context.Context, user string) error {
 
 // toFindNamespacesByScopeBinding will find namespaces under tenant or project
 func (r *UserReconciler) toFindNamespacesByScopeBinding(ctx context.Context, binding userv1.ScopeBinding) ([]corev1.Namespace, error) {
-	var labelSelectorStr string
-
-	if binding.ScopeType == userv1.TenantScope {
-		labelSelectorStr = fmt.Sprintf("%v=%v", constants.HncTenantLabel, binding.ScopeName)
-	}
-
-	if binding.ScopeType == userv1.ProjectScope {
-		labelSelectorStr = fmt.Sprintf("%v=%v", constants.HncProjectLabel, binding.ScopeName)
-	}
-
-	ls, err := labels.Parse(labelSelectorStr)
-	if err != nil {
-		return nil, err
+	// A tenant scope reaches every namespace under the tenant, spaces included,
+	// which is why a project-owned namespace carries its tenant as well as its
+	// project. An unknown scope is refused rather than turned into an empty
+	// selector, which would have spread bindings across the whole cluster.
+	var ls labels.Selector
+	switch binding.ScopeType {
+	case userv1.TenantScope:
+		ls = ownership.TenantSelector(binding.ScopeName)
+	case userv1.ProjectScope:
+		ls = ownership.Selector(ownership.KindProject, binding.ScopeName)
+	default:
+		return nil, fmt.Errorf("unsupported scope type %v", binding.ScopeType)
 	}
 
 	nsList := &corev1.NamespaceList{}
-	err = r.List(ctx, nsList, &client.ListOptions{LabelSelector: ls})
-	if err != nil {
+	if err := r.List(ctx, nsList, &client.ListOptions{LabelSelector: ls}); err != nil {
 		return nil, err
 	}
 

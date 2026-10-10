@@ -25,7 +25,6 @@ import (
 	userv1 "github.com/kubecube-io/kubecube/pkg/apis/user/v1"
 	"github.com/kubecube-io/kubecube/pkg/clog"
 	"github.com/kubecube-io/kubecube/pkg/ownership"
-	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -97,25 +96,24 @@ func (r *UserReconciler) toFindRelatedUsers(tenant, project string) ([]string, e
 	return relatedUsers, nil
 }
 
-// extraTenantAndProject will extra tenant and project name from given labels.
+// extraTenantAndProject extracts the tenant and the project a namespace belongs
+// to, from whichever labels express them.
 func extraTenantAndProject(ls map[string]string) (string, string) {
-	if ls == nil {
-		return "", ""
+	tenant, _ := ownership.TenantOfLabels(ls, "")
+
+	project := ""
+	if kind, name, ok := ownership.OfLabels(ls, ""); ok && kind == ownership.KindProject {
+		project = name
 	}
-	return ls[constants.HncTenantLabel], ls[constants.HncProjectLabel]
+
+	return tenant, project
 }
 
+// allowedPaas reports whether a namespace is one the platform manages, which is
+// what decides if a user's bindings have to be spread into it. It needs both
+// facts: a namespace with no tenant belongs to nobody, and one with no project
+// is not something a project or tenant binding reaches.
 func allowedPaas(ls map[string]string) bool {
-	// A project-owned namespace is what the spread targets, and it is now
-	// labelled with the ownership pair rather than the HNC pair.
-	if kind, _, ok := ownership.OfLabels(ls, ""); ok && kind == ownership.KindProject {
-		return true
-	}
-
 	tenant, project := extraTenantAndProject(ls)
-	if len(tenant) == 0 || len(project) == 0 {
-		return false
-	}
-	// allowed paas if we got tenant and project
-	return true
+	return len(tenant) > 0 && len(project) > 0
 }

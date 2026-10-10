@@ -86,10 +86,10 @@ func TestAdoption(t *testing.T) {
 			ns:   handBuiltProject,
 		},
 		{
-			name:   "a namespace under an owned project inherits that project",
+			name:   "a namespace under an owned project inherits it, as a space",
 			ns:     makeNs("team-a", nil),
 			parent: ownedProject,
-			want:   ownership.ProjectLabels("t1", "p1"),
+			want:   ownership.SpaceLabels("t1", "p1"),
 			adopt:  true,
 		},
 		{

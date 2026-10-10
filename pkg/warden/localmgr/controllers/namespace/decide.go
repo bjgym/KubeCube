@@ -28,18 +28,18 @@ import (
 // Adoption works out the ownership labels a namespace should carry when it
 // carries none, so that the platform can own a tree it did not build.
 //
-// Ownership is decided from the best evidence available — the labels the
-// namespace already carries, then its name, then its parent — and written once.
-// The name convention is consulted exactly here; after a namespace is adopted
-// the label is the authority and the name is only a convention, which is what
-// lets the readers stop reading names. A namespace the platform cannot place is
-// left unmanaged rather than guessed at, because a guess would decide who may
-// reach it.
+// Ownership is decided from the best evidence available — the HNC labels a
+// namespace already carries, then its name, then its project-owned parent — and
+// written once. The name convention is consulted exactly here; after a
+// namespace is adopted the label is the authority and the name is only a
+// convention, which is what lets the readers stop reading names. A namespace
+// the platform cannot place is left unmanaged rather than guessed at, because a
+// guess would decide who may reach it.
 //
 // parent is the namespace the subnamespace annotation points at, when there is
 // one. It matters because a project's tenant and a space's project are only
 // recorded there.
-func Adoption(ns *corev1.Namespace, parent *corev1.Namespace) (labels map[string]string, adopt bool) {
+func Adoption(ns *corev1.Namespace, parent *corev1.Namespace) (map[string]string, bool) {
 	if ns == nil {
 		return nil, false
 	}
@@ -52,18 +52,6 @@ func Adoption(ns *corev1.Namespace, parent *corev1.Namespace) (labels map[string
 		return nil, false
 	}
 
-	// The HNC labels are the best evidence available: they already say who owns
-	// this namespace. The project is read first, because a project namespace
-	// and a space carry both labels and the project is the narrower fact.
-	if project := ns.Labels[constants.HncProjectLabel]; project != "" {
-		if tenant := ns.Labels[constants.HncTenantLabel]; tenant != "" {
-			return ownership.ProjectLabels(tenant, project), true
-		}
-	}
-	if tenant := ns.Labels[constants.HncTenantLabel]; tenant != "" {
-		return ownership.TenantLabels(tenant), true
-	}
-
 	name := ns.GetName()
 
 	// a tenant namespace names itself
@@ -71,25 +59,44 @@ func Adoption(ns *corev1.Namespace, parent *corev1.Namespace) (labels map[string
 		return ownership.TenantLabels(tenant), true
 	}
 
-	// a project namespace names itself, and takes its tenant from the namespace
-	// it was created in
-	if project, ok := trimPrefix(name, constants.ProjectNsPrefix); ok {
-		tenant, ok := tenantOf(parent)
+	// a project namespace names itself, and takes its tenant from the labels it
+	// carries or from the namespace it was created in
+	if selfProject, ok := trimPrefix(name, constants.ProjectNsPrefix); ok {
+		tenant, ok := tenantOf(ns, parent)
 		if !ok {
 			return nil, false
 		}
-		return ownership.ProjectLabels(tenant, project), true
+		return ownership.ProjectLabels(tenant, selfProject), true
 	}
 
-	// anything else belongs to whatever owns its parent. Only a project owner
-	// is inherited: a namespace created directly under a tenant namespace is
-	// not thereby a tenant namespace.
-	if kind, owner, ok := ownershipOf(parent); ok && kind == ownership.KindProject {
-		tenant, ok := tenantOf(parent)
+	// a namespace carrying the HNC project label is owned by that project. The
+	// level is what it sits under, because HNC's tree is tenant, then project,
+	// then space, and only the parent says which of the last two this is.
+	if project := ns.Labels[constants.HncProjectLabel]; project != "" {
+		tenant, ok := tenantOf(ns, parent)
 		if !ok {
 			return nil, false
 		}
-		return ownership.ProjectLabels(tenant, owner), true
+		if parent != nil && strings.HasPrefix(parent.GetName(), constants.TenantNsPrefix) {
+			return ownership.ProjectLabels(tenant, project), true
+		}
+		return ownership.SpaceLabels(tenant, project), true
+	}
+
+	// a namespace carrying only the HNC tenant label is the tenant's own
+	if tenant := ns.Labels[constants.HncTenantLabel]; tenant != "" {
+		return ownership.TenantLabels(tenant), true
+	}
+
+	// anything else belongs to whatever owns its parent, and is a space. Only a
+	// project owner is inherited: a namespace created directly under a tenant
+	// namespace is not thereby a project or a tenant.
+	if kind, owner, ok := ownershipOf(parent); ok && kind == ownership.KindProject {
+		tenant, ok := tenantOf(ns, parent)
+		if !ok {
+			return nil, false
+		}
+		return ownership.SpaceLabels(tenant, owner), true
 	}
 
 	return nil, false
@@ -106,13 +113,19 @@ func trimPrefix(name, prefix string) (string, bool) {
 	return rest, true
 }
 
-// tenantOf and ownershipOf tolerate a missing parent, which is the common case
-// for a namespace that is not part of the tree at all.
-func tenantOf(parent *corev1.Namespace) (string, bool) {
-	if parent == nil {
-		return "", false
+// tenantOf reads the tenant from the namespace itself and then from its parent,
+// which is where a project namespace's tenant is recorded. A missing parent is
+// the common case for a namespace that is not part of the tree at all.
+func tenantOf(ns *corev1.Namespace, parent *corev1.Namespace) (string, bool) {
+	if ns != nil {
+		if tenant, ok := ownership.TenantOf(ns); ok {
+			return tenant, true
+		}
 	}
-	return ownership.TenantOf(parent)
+	if parent != nil {
+		return ownership.TenantOf(parent)
+	}
+	return "", false
 }
 
 func ownershipOf(parent *corev1.Namespace) (ownership.Kind, string, bool) {

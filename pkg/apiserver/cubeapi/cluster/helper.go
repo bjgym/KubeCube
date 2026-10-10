@@ -40,6 +40,7 @@ import (
 	"github.com/kubecube-io/kubecube/pkg/clog"
 	"github.com/kubecube-io/kubecube/pkg/multicluster"
 	mgrclient "github.com/kubecube-io/kubecube/pkg/multicluster/client"
+	"github.com/kubecube-io/kubecube/pkg/ownership"
 	"github.com/kubecube-io/kubecube/pkg/quota"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 	"github.com/kubecube-io/kubecube/pkg/utils/meta"
@@ -391,14 +392,11 @@ func getClustersByNamespace(namespace string, ctx context.Context) ([]string, er
 	var err error
 	switch {
 	case isTenant:
-		lbSelector, err = labels.Parse(fmt.Sprintf("%v=%v", constants.HncTenantLabel, strings.TrimPrefix(namespace, constants.TenantNsPrefix)))
+		lbSelector = ownership.TenantSelector(strings.TrimPrefix(namespace, constants.TenantNsPrefix))
 	case isProject:
-		lbSelector, err = labels.Parse(fmt.Sprintf("%v=%v", constants.HncProjectLabel, strings.TrimPrefix(namespace, constants.ProjectNsPrefix)))
+		lbSelector = ownership.Selector(ownership.KindProject, strings.TrimPrefix(namespace, constants.ProjectNsPrefix))
 	default:
 		return nil, fmt.Errorf("unspport namespace sopce: %v", namespace)
-	}
-	if err != nil {
-		return nil, err
 	}
 
 	for _, cluster := range clusters {
@@ -429,11 +427,9 @@ func getClustersByNamespace(namespace string, ctx context.Context) ([]string, er
 func filterClustersByProject(ctx context.Context, clusterList clusterv1.ClusterList, project string) (clusterv1.ClusterList, error) {
 	var clusterItem []clusterv1.Cluster
 
-	projectLabel := constants.ProjectNsPrefix + project + constants.HncSuffix
-	labelSelector, err := labels.Parse(fmt.Sprintf("%v=%v", projectLabel, "1"))
-	if err != nil {
-		return clusterv1.ClusterList{}, err
-	}
+	// a cluster is related to the project when it holds any of the project's
+	// spaces, which is what the project's depth label used to say
+	labelSelector := ownership.SpaceSelector(project)
 
 	for _, cluster := range clusterList.Items {
 		cli, err := multicluster.Interface().GetClient(cluster.Name)
@@ -485,34 +481,26 @@ func getAssignedResource(cli mgrclient.Client, cluster string) (cpu resource.Qua
 	return cpu, mem, gpu, err
 }
 
-func listAllHncNsFunc(ctx context.Context) func(cli mgrclient.Client) (corev1.NamespaceList, error) {
+func listAllManagedNsFunc(ctx context.Context) func(cli mgrclient.Client) (corev1.NamespaceList, error) {
 	return func(cli mgrclient.Client) (corev1.NamespaceList, error) {
-		nsLIst := corev1.NamespaceList{}
-		labelSelector, err := labels.Parse(constants.HncTenantLabel)
-		if err != nil {
-			return nsLIst, err
-		}
-		err = cli.Cache().List(ctx, &nsLIst, &client.ListOptions{LabelSelector: labelSelector})
-		return nsLIst, err
+		nsList := corev1.NamespaceList{}
+		err := cli.Cache().List(ctx, &nsList, &client.ListOptions{LabelSelector: ownership.ManagedSelector()})
+		return nsList, err
 	}
 }
 
-func listHncNsByTenantsFunc(ctx context.Context, tenantList []string) func(cli mgrclient.Client) (corev1.NamespaceList, error) {
+func listManagedNsByTenantsFunc(ctx context.Context, tenantList []string) func(cli mgrclient.Client) (corev1.NamespaceList, error) {
 	return func(cli mgrclient.Client) (corev1.NamespaceList, error) {
-		nsLIst := corev1.NamespaceList{}
+		nsList := corev1.NamespaceList{}
 		for _, tenant := range tenantList {
 			tempNsList := corev1.NamespaceList{}
-			labelSelector, err := labels.Parse(fmt.Sprintf("%v=%v", constants.HncTenantLabel, tenant))
+			err := cli.Cache().List(ctx, &tempNsList, &client.ListOptions{LabelSelector: ownership.TenantSelector(tenant)})
 			if err != nil {
 				return tempNsList, err
 			}
-			err = cli.Cache().List(ctx, &tempNsList, &client.ListOptions{LabelSelector: labelSelector})
-			if err != nil {
-				return tempNsList, err
-			}
-			nsLIst.Items = append(nsLIst.Items, tempNsList.Items...)
+			nsList.Items = append(nsList.Items, tempNsList.Items...)
 		}
-		return nsLIst, nil
+		return nsList, nil
 	}
 }
 

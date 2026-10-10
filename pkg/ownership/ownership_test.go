@@ -17,10 +17,12 @@ limitations under the License.
 package ownership
 
 import (
+	"reflect"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 )
@@ -169,28 +171,92 @@ func TestSingleKindReaders(t *testing.T) {
 }
 
 func TestLabelConstructors(t *testing.T) {
-	tenantNs := ns("kubecube-tenant-t1", TenantLabels("t1"))
-	if kind, name, ok := Of(tenantNs); !ok || kind != KindTenant || name != "t1" {
-		t.Errorf("TenantLabels: Of() = %q, %q, %v; want tenant, t1, true", kind, name, ok)
-	}
-	if tenant, ok := TenantOf(tenantNs); !ok || tenant != "t1" {
-		t.Errorf("TenantLabels: TenantOf() = %q, %v; want t1, true", tenant, ok)
-	}
-	if _, ok := ProjectOf(tenantNs); ok {
-		t.Error("TenantLabels: ProjectOf() reported a project")
+	tests := []struct {
+		name       string
+		labels     map[string]string
+		wantKind   Kind
+		wantOwner  string
+		wantTenant string
+		wantLevel  Level
+	}{
+		{"a tenant namespace", TenantLabels("t1"), KindTenant, "t1", "t1", LevelTenant},
+		{"a project namespace", ProjectLabels("t1", "p1"), KindProject, "p1", "t1", LevelProject},
+		{"a space", SpaceLabels("t1", "p1"), KindProject, "p1", "t1", LevelSpace},
 	}
 
-	projectNs := ns("space-a", ProjectLabels("t1", "p1"))
-	if kind, name, ok := Of(projectNs); !ok || kind != KindProject || name != "p1" {
-		t.Errorf("ProjectLabels: Of() = %q, %q, %v; want project, p1, true", kind, name, ok)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			obj := ns("x", tt.labels)
+
+			kind, owner, ok := Of(obj)
+			if !ok || kind != tt.wantKind || owner != tt.wantOwner {
+				t.Errorf("Of() = %q, %q, %v; want %q, %q, true", kind, owner, ok, tt.wantKind, tt.wantOwner)
+			}
+			if tenant, ok := TenantOf(obj); !ok || tenant != tt.wantTenant {
+				t.Errorf("TenantOf() = %q, %v; want %q, true", tenant, ok, tt.wantTenant)
+			}
+			if level, ok := LevelOf(obj); !ok || level != tt.wantLevel {
+				t.Errorf("LevelOf() = %q, %v; want %q, true", level, ok, tt.wantLevel)
+			}
+		})
 	}
-	// the tenant has to survive on a project-owned namespace: a reader selects
-	// every namespace under a tenant, and a tenant member reaches a space
-	if tenant, ok := TenantOf(projectNs); !ok || tenant != "t1" {
-		t.Errorf("ProjectLabels: TenantOf() = %q, %v; want t1, true", tenant, ok)
+}
+
+// The selectors are what the readers migrated onto, so what they match is the
+// behaviour that has to be preserved: a tenant reaches everything under it, a
+// project reaches itself and its spaces, and only a space selector excludes the
+// project's own namespace.
+func TestSelectors(t *testing.T) {
+	all := []*v1.Namespace{
+		ns("kubecube-tenant-t1", TenantLabels("t1")),
+		ns("kubecube-project-p1", ProjectLabels("t1", "p1")),
+		ns("space-a", SpaceLabels("t1", "p1")),
+		ns("kubecube-tenant-t2", TenantLabels("t2")),
 	}
-	if project, ok := ProjectOf(projectNs); !ok || project != "p1" {
-		t.Errorf("ProjectLabels: ProjectOf() = %q, %v; want p1, true", project, ok)
+
+	matched := func(sel labels.Selector) []string {
+		names := []string{}
+		for _, obj := range all {
+			if sel.Matches(labels.Set(obj.GetLabels())) {
+				names = append(names, obj.GetName())
+			}
+		}
+		return names
+	}
+
+	tests := []struct {
+		name string
+		sel  labels.Selector
+		want []string
+	}{
+		{
+			name: "the tenant selector reaches the tenant, its project and its spaces",
+			sel:  TenantSelector("t1"),
+			want: []string{"kubecube-tenant-t1", "kubecube-project-p1", "space-a"},
+		},
+		{
+			name: "the project selector reaches the project and its spaces",
+			sel:  Selector(KindProject, "p1"),
+			want: []string{"kubecube-project-p1", "space-a"},
+		},
+		{
+			name: "the space selector reaches spaces without the project's own namespace",
+			sel:  SpaceSelector("p1"),
+			want: []string{"space-a"},
+		},
+		{
+			name: "the managed selector reaches everything the platform owns",
+			sel:  ManagedSelector(),
+			want: []string{"kubecube-tenant-t1", "kubecube-project-p1", "space-a", "kubecube-tenant-t2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := matched(tt.sel); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("selector matched %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

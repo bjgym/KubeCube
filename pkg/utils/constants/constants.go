@@ -132,6 +132,13 @@ const (
 	// readers still have to select every namespace under a tenant.
 	OwnerTenantLabel = "kubecube.io/owner-tenant"
 
+	// OwnerLevelLabel records where an owned namespace sits in the tree:
+	// tenant, project or space. It is derived from OwnerLabel and written with
+	// it. It exists because a reader has to select a project's spaces without
+	// matching the project's own namespace, and the name is not a reliable way
+	// to tell them apart.
+	OwnerLevelLabel = "kubecube.io/owner-level"
+
 	// CubeQuotaLabel point to CubeResourceQuota
 	CubeQuotaLabel = "kubecube.io/quota"
 

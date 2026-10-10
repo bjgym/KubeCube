@@ -22,11 +22,11 @@ import (
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 
 	tenantv1 "github.com/kubecube-io/kubecube/pkg/apis/tenant/v1"
 	"github.com/kubecube-io/kubecube/pkg/clog"
 	"github.com/kubecube-io/kubecube/pkg/multicluster"
+	"github.com/kubecube-io/kubecube/pkg/ownership"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 	"github.com/kubecube-io/kubecube/pkg/utils/domain"
 	"k8s.io/apimachinery/pkg/types"
@@ -86,10 +86,9 @@ func (r *Validator) ValidateDelete(project *tenantv1.Project) error {
 	ctx := context.Background()
 	clusters := multicluster.Interface().FuzzyCopy()
 
-	lbSelector, err := labels.Parse(fmt.Sprintf("%v%v.tree.hnc.x-k8s.io/depth=1", constants.ProjectNsPrefix, project.Name))
-	if err != nil {
-		return err
-	}
+	// a project can only go once its spaces are gone. Its own namespace is not
+	// a space, so it does not block its own project from being deleted.
+	lbSelector := ownership.SpaceSelector(project.Name)
 
 	for _, cluster := range clusters {
 		namespaceList := v1.NamespaceList{}

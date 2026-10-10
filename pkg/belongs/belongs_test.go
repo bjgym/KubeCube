@@ -50,7 +50,8 @@ func TestNamespaceJudgement(t *testing.T) {
 	otherTenantMember := makeUser([]string{"t2"}, nil, false)
 	platformAdmin := makeUser(nil, nil, true)
 
-	space := ownership.ProjectLabels("t1", "p1")
+	space := ownership.SpaceLabels("t1", "p1")
+	projectNs := ownership.ProjectLabels("t1", "p1")
 	tenantNs := ownership.TenantLabels("t1")
 
 	tests := []struct {
@@ -63,7 +64,7 @@ func TestNamespaceJudgement(t *testing.T) {
 		{"a tenant member reaches the tenant namespace", tenantMember, nsWith("kubecube-tenant-t1", tenantNs), true},
 		{"a tenant member reaches a space through the tenant", tenantMember, nsWith("space-a", space), true},
 		{"a project member reaches a space through the project", projectMember, nsWith("space-a", space), true},
-		{"a project member reaches the project namespace", projectMember, nsWith("kubecube-project-p1", space), true},
+		{"a project member reaches the project namespace", projectMember, nsWith("kubecube-project-p1", projectNs), true},
 		{"a project member does not reach the tenant namespace", projectMember, nsWith("kubecube-tenant-t1", tenantNs), false},
 		{"another tenant's member reaches nothing", otherTenantMember, nsWith("space-a", space), false},
 		{"a hand-built tenant namespace is reachable by its name", tenantMember, nsWith("kubecube-tenant-t1", nil), true},

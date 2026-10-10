@@ -42,6 +42,7 @@ import (
 	"github.com/kubecube-io/kubecube/pkg/clog"
 	"github.com/kubecube-io/kubecube/pkg/multicluster"
 	mgrclient "github.com/kubecube-io/kubecube/pkg/multicluster/client"
+	"github.com/kubecube-io/kubecube/pkg/ownership"
 	"github.com/kubecube-io/kubecube/pkg/quota"
 	"github.com/kubecube-io/kubecube/pkg/utils/access"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
@@ -428,12 +429,12 @@ func (h *handler) getSubNamespaces(c *gin.Context) {
 		return
 	}
 
-	// list all hnc managed namespaces
-	listFunc := listAllHncNsFunc(ctx)
+	// list every namespace the platform owns
+	listFunc := listAllManagedNsFunc(ctx)
 
-	// list hnc managed namespaces by given tenants
+	// narrow it to the given tenants
 	if len(tenantList) > 0 {
-		listFunc = listHncNsByTenantsFunc(ctx, tenantList)
+		listFunc = listManagedNsByTenantsFunc(ctx, tenantList)
 	}
 
 	items := make([]respBody, 0)
@@ -448,15 +449,23 @@ func (h *handler) getSubNamespaces(c *gin.Context) {
 		}
 
 		for _, ns := range nsList.Items {
-			project, ok1 := ns.Labels[constants.HncProjectLabel]
-			tenant, ok2 := ns.Labels[constants.HncTenantLabel]
-
-			if !ok1 || !ok2 || !ns.ObjectMeta.DeletionTimestamp.IsZero() {
+			if !ns.ObjectMeta.DeletionTimestamp.IsZero() {
 				continue
 			}
 
-			// filter project ns(such as kubecube-project-project-1).
-			if ns.Labels[constants.ProjectNsPrefix+project+constants.HncSuffix] != constants.HncProjectDepth {
+			// keep only the project's spaces: the project's own namespace is
+			// owned by the same project, but it is not a space
+			if level, ok := ownership.LevelOf(&ns); !ok || level != ownership.LevelSpace {
+				continue
+			}
+
+			project, ok := ownership.ProjectOf(&ns)
+			if !ok {
+				continue
+			}
+
+			tenant, ok := ownership.TenantOf(&ns)
+			if !ok {
 				continue
 			}
 
