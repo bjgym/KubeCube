@@ -35,7 +35,6 @@ import (
 	"github.com/kubecube-io/kubecube/pkg/clog"
 	"github.com/kubecube-io/kubecube/pkg/ownership"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
-	"github.com/kubecube-io/kubecube/pkg/utils/env"
 )
 
 var _ reconcile.Reconciler = &ProjectReconciler{}
@@ -126,12 +125,12 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, fmt.Errorf("the tenant %s do not content .spec.namespace", tenantName)
 	}
 
-	if env.CreateHNCNs() {
-		err = r.crateProjectNamespace(ctx, tenantName, project.Name)
-		if err != nil {
-			clog.Error(err.Error())
-			return ctrl.Result{}, err
-		}
+	// The project's namespace is what the spaces live in. HNC used to
+	// materialise it from an anchor, so this sat behind a flag that nothing set;
+	// with HNC gone the platform has to create it.
+	if err := r.crateProjectNamespace(ctx, tenantName, project.Name); err != nil {
+		clog.Error(err.Error())
+		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
@@ -200,20 +199,9 @@ func SetupWithManager(mgr ctrl.Manager) error {
 func (r *ProjectReconciler) crateProjectNamespace(ctx context.Context, tenant, project string) error {
 	ns := &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        fmt.Sprintf("kubecube-project-%v", project),
-			Annotations: map[string]string{constants.HncAnnotation: fmt.Sprintf("kubecube-tenant-%v", tenant)},
-			Labels: map[string]string{
-				constants.HncIncludedNsLabel:                                        "true",
-				fmt.Sprintf("kubecube-project-%v.tree.hnc.x-k8s.io/depth", project): "0",
-				fmt.Sprintf("kubecube-tenant-%v.tree.hnc.x-k8s.io/depth", tenant):   "1",
-				constants.HncProjectLabel:                                           project,
-				constants.HncTenantLabel:                                            tenant,
-			},
+			Name:   constants.ProjectNsPrefix + project,
+			Labels: ownership.ProjectLabels(tenant, project),
 		},
-	}
-
-	for k, v := range ownership.ProjectLabels(tenant, project) {
-		ns.Labels[k] = v
 	}
 
 	err := r.Create(ctx, ns)

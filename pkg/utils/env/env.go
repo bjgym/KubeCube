@@ -151,45 +151,6 @@ func CubeNamespace() string {
 	return cubeNamespace
 }
 
-// HncManagedLabels is read-only
-var HncManagedLabels = hncManagedLabels()
-
-func EnsureManagedLabels(labels map[string]string) map[string]string {
-	res := make(map[string]string)
-	for k, v := range labels {
-		if v != "-" {
-			res[k] = v
-		}
-	}
-	return res
-}
-
-func CreateHNCNs() bool {
-	return os.Getenv("CREATE_HNC_NS") == "true"
-}
-
-func hncManagedLabels() map[string]string {
-	labels := make(map[string]string)
-
-	labelsStr := os.Getenv("HNC_MANAGED_LABELS")
-	if len(labelsStr) == 0 {
-		return labels
-	}
-
-	// parse labels, format as:
-	// add and update: labelKey1@labelValue1;labelKey2@labelValue2
-	// delete: labelKey1@-;labelKey2@-
-	kvs := strings.Split(labelsStr, ";")
-	for _, kv := range kvs {
-		res := strings.Split(kv, "@")
-		if len(res) != 2 {
-			clog.Fatal("labels string invalid: %s", labelsStr)
-		}
-		labels[res[0]] = res[1]
-	}
-	return labels
-}
-
 func GetClusterClientConfig() config.Config {
 	qps := os.Getenv("CLUSTER_CLIENT_QPS")
 	qpsFloat, err := strconv.ParseFloat(qps, 32)

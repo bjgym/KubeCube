@@ -697,7 +697,7 @@ func (h *handler) createNsAndQuota(c *gin.Context) {
 	count := 0
 	for toWait {
 		if count == retryCount {
-			clog.Warn("wait fo rbac spread by hnc retry exceed %v", retryCount)
+			clog.Warn("the rolebindings did not reach namespace %s within %v retries", data.SubNamespaceAnchor.Name, retryCount)
 			break
 		}
 

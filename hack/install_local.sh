@@ -57,4 +57,3 @@ kubectl apply -f deploy/manifests/featureConfigmap.yaml
 kubectl apply -f deploy/manifests/languageConfig.yaml
 kubectl apply -f deploy/manifests/rbac
 kubectl apply -f deploy/metrics-server.yaml
-kubectl apply -f deploy/hnc.yaml

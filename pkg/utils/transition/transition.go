@@ -45,28 +45,12 @@ func SubNs2Ns(subNs *SubnamespaceAnchor) *v1.Namespace {
 	tenant := subNs.Labels[constants.TenantLabel]
 	project := subNs.Labels[constants.ProjectLabel]
 
-	ns := &v1.Namespace{
+	return &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: subNs.Name,
-			Annotations: map[string]string{
-				constants.HncAnnotation: subNs.Namespace,
-			},
-			Labels: map[string]string{
-				constants.HncIncludedNsLabel: "true",
-				fmt.Sprintf("%v%v.tree.hnc.x-k8s.io/depth", constants.ProjectNsPrefix, project): constants.HncProjectDepth,
-				fmt.Sprintf("%v%v.tree.hnc.x-k8s.io/depth", constants.TenantNsPrefix, tenant):   constants.HncTenantDepth,
-				fmt.Sprintf("%v.tree.hnc.x-k8s.io/depth", subNs.Name):                           constants.HncCurrentDepth,
-				constants.HncProjectLabel: project,
-				constants.HncTenantLabel:  tenant,
-			},
+			Name:   subNs.Name,
+			Labels: ownership.SpaceLabels(tenant, project),
 		},
 	}
-
-	for k, v := range ownership.SpaceLabels(tenant, project) {
-		ns.Labels[k] = v
-	}
-
-	return ns
 }
 
 func TransBinding(labels map[string]string, sub rbacv1.Subject, ref rbacv1.RoleRef) (scopeType string, scopeName string, role string, user string, err error) {
