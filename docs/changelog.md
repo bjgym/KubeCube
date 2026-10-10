@@ -1,3 +1,8 @@
+# v1.9.2
+
+## Feature
+- the user kubeconfig endpoint accepts a `cluster` parameter and answers with that cluster's context only, which is what a cloud shell session fetches
+
 # v1.9.1
 
 ## BugFix
