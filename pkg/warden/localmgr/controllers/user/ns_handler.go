@@ -24,6 +24,7 @@ import (
 
 	userv1 "github.com/kubecube-io/kubecube/pkg/apis/user/v1"
 	"github.com/kubecube-io/kubecube/pkg/clog"
+	"github.com/kubecube-io/kubecube/pkg/ownership"
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -105,6 +106,12 @@ func extraTenantAndProject(ls map[string]string) (string, string) {
 }
 
 func allowedPaas(ls map[string]string) bool {
+	// A project-owned namespace is what the spread targets, and it is now
+	// labelled with the ownership pair rather than the HNC pair.
+	if kind, _, ok := ownership.OfLabels(ls, ""); ok && kind == ownership.KindProject {
+		return true
+	}
+
 	tenant, project := extraTenantAndProject(ls)
 	if len(tenant) == 0 || len(project) == 0 {
 		return false

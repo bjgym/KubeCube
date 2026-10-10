@@ -23,6 +23,7 @@ import (
 	"github.com/kubecube-io/kubecube/pkg/utils/ctrlopts"
 	"github.com/kubecube-io/kubecube/pkg/warden/localmgr/controllers/crds"
 	"github.com/kubecube-io/kubecube/pkg/warden/localmgr/controllers/hotplug"
+	namespace "github.com/kubecube-io/kubecube/pkg/warden/localmgr/controllers/namespace"
 	project "github.com/kubecube-io/kubecube/pkg/warden/localmgr/controllers/project"
 	"github.com/kubecube-io/kubecube/pkg/warden/localmgr/controllers/quota"
 	tenant "github.com/kubecube-io/kubecube/pkg/warden/localmgr/controllers/tenant"
@@ -60,6 +61,15 @@ func setupControllersWithManager(m *LocalManager, controllers string) error {
 
 	if ctrlopts.IsControllerEnabled("project", ctrls) {
 		err = project.SetupWithManager(m.Manager)
+		if err != nil {
+			return err
+		}
+	}
+
+	// adopts namespaces the platform should own but that were not built by it:
+	// a hand-made tenant namespace, an HNC-materialised project namespace
+	if ctrlopts.IsControllerEnabled("namespace", ctrls) {
+		err = namespace.SetupWithManager(m.Manager)
 		if err != nil {
 			return err
 		}

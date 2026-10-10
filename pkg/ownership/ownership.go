@@ -96,8 +96,13 @@ func ProjectLabels(tenant, project string) map[string]string {
 // failing means a namespace never silently loses its owner part-way through the
 // migration.
 func Of(obj metav1.Object) (kind Kind, name string, ok bool) {
-	labels := obj.GetLabels()
+	return OfLabels(obj.GetLabels(), obj.GetName())
+}
 
+// OfLabels resolves ownership from a label set plus the object's name, for the
+// callers that hold labels rather than an object: a namespace predicate, a
+// controller's map function, a selector builder.
+func OfLabels(labels map[string]string, objName string) (kind Kind, name string, ok bool) {
 	if v := labels[Label]; v != "" {
 		if kind, name, parsed := parse(v); parsed {
 			return kind, name, true
@@ -113,11 +118,19 @@ func Of(obj metav1.Object) (kind Kind, name string, ok bool) {
 	}
 
 	// migrating from: the name convention, which only ever covered tenants
-	if name := obj.GetName(); strings.HasPrefix(name, constants.TenantNsPrefix) {
-		return KindTenant, strings.TrimPrefix(name, constants.TenantNsPrefix), true
+	if strings.HasPrefix(objName, constants.TenantNsPrefix) {
+		return KindTenant, strings.TrimPrefix(objName, constants.TenantNsPrefix), true
 	}
 
 	return "", "", false
+}
+
+// ManagedLabels reports whether a label set belongs to a namespace the platform
+// owns. The name is not consulted: a claim of ownership has to come from a
+// label, which is the whole point of having one.
+func ManagedLabels(labels map[string]string) bool {
+	_, _, ok := OfLabels(labels, "")
+	return ok
 }
 
 // TenantOf reports which tenant the object belongs to, whether the tenant owns
@@ -125,8 +138,11 @@ func Of(obj metav1.Object) (kind Kind, name string, ok bool) {
 // with its tenant, which is what lets a reader select everything under a tenant
 // and what lets an authorization decision honour tenant membership on a space.
 func TenantOf(obj metav1.Object) (string, bool) {
-	labels := obj.GetLabels()
+	return TenantOfLabels(obj.GetLabels(), obj.GetName())
+}
 
+// TenantOfLabels is TenantOf for a bare label set.
+func TenantOfLabels(labels map[string]string, objName string) (string, bool) {
 	if v := labels[TenantKey]; v != "" {
 		return v, true
 	}
@@ -135,12 +151,12 @@ func TenantOf(obj metav1.Object) (string, bool) {
 	if v := labels[constants.HncTenantLabel]; v != "" {
 		return v, true
 	}
-	if name := obj.GetName(); strings.HasPrefix(name, constants.TenantNsPrefix) {
-		return strings.TrimPrefix(name, constants.TenantNsPrefix), true
+	if strings.HasPrefix(objName, constants.TenantNsPrefix) {
+		return strings.TrimPrefix(objName, constants.TenantNsPrefix), true
 	}
 
 	// an owner that is itself a tenant, when the derived key is absent
-	if kind, name, ok := Of(obj); ok && kind == KindTenant {
+	if kind, name, ok := OfLabels(labels, objName); ok && kind == KindTenant {
 		return name, true
 	}
 
