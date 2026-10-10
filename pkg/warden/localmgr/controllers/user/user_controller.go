@@ -281,10 +281,15 @@ func (r *UserReconciler) generateClusterRoleBinding(ctx context.Context, user st
 //     carry over. A Role a user writes into a project namespace is not spread
 //     into its spaces; that is a capability HNC had and this does not.
 //   - secrets and alertmanagerconfigs: propagated today only because a
-//     post-install Job in hotplugs/charts/kubecube-monitoring asks HNC to. They
-//     are not carried over. Copying every Secret written in a project namespace
-//     into each space beneath it is too wide a mechanism to keep, and the addon
-//     that asked for it needs a narrower one.
+//     post-install Job in hotplugs/charts/kubecube-monitoring asks HNC to, and
+//     they carry a real feature rather than being incidental. prometheus-operator
+//     scopes an AlertmanagerConfig to its own namespace, and the console writes a
+//     project's alert policy into the project namespace, so without a copy in
+//     each space that policy silently stops matching the spaces' alerts. They are
+//     not carried over as they are: a reconciler materialises a project's
+//     AlertmanagerConfigs, and exactly the Secrets those reference, into that
+//     project's spaces. That preserves the feature without copying every Secret
+//     written in the project namespace.
 func (r *UserReconciler) refreshNsBinding(ctx context.Context, user string, binding userv1.ScopeBinding) error {
 	namespaces, err := r.toFindNamespacesByScopeBinding(ctx, binding)
 	if err != nil {
