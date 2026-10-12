@@ -26,7 +26,10 @@ COPY vendor/ vendor/
 COPY Makefile Makefile
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux GO111MODULE=on go build -a -o warden cmd/warden/main.go
+# TARGETARCH is set automatically by buildx; a plain native build leaves it
+# empty, which makes GOARCH fall back to the build host's architecture.
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH GO111MODULE=on go build -a -o warden cmd/warden/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
