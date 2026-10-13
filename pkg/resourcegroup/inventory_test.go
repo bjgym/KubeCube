@@ -102,7 +102,7 @@ func TestDeriveEnvironment(t *testing.T) {
 	dev := map[string]string{constants.EnvironmentLabel: "dev"}
 	staging := map[string]string{constants.EnvironmentLabel: "staging"}
 	prod := map[string]string{constants.EnvironmentLabel: "prod"}
-	unlabelled := map[string]string{"kubecube.io/namespace-owner": "project:demo"}
+	unlabelled := map[string]string{"kubecube.io/namespace-owner": "project-demo"}
 	unknown := map[string]string{constants.EnvironmentLabel: "production"}
 
 	tests := []struct {

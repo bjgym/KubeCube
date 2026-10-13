@@ -3,6 +3,12 @@
 ## Feature
 - the user kubeconfig endpoint accepts a `cluster` parameter and answers with that cluster's context only, which is what a cloud shell session fetches
 
+## BugFix
+- the namespace ownership label value separates its kind from its name with `-`
+  instead of `:`: a label value may only carry alphanumerics, `-`, `_` or `.`, so
+  the API server rejected every tenant and project namespace the controllers
+  tried to create and tenancy never got past its first reconcile
+
 # v1.9.1
 
 ## BugFix

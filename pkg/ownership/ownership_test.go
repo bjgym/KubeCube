@@ -41,7 +41,7 @@ func TestOf(t *testing.T) {
 	}{
 		{
 			name:     "owner label names a tenant",
-			obj:      ns("kubecube-tenant-t1", map[string]string{Label: "tenant:t1"}),
+			obj:      ns("kubecube-tenant-t1", map[string]string{Label: "tenant-t1"}),
 			wantKind: KindTenant, wantName: "t1", wantOk: true,
 		},
 		{

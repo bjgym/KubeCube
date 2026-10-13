@@ -29,7 +29,7 @@ func TestSandboxLabels(t *testing.T) {
 	got := SandboxLabels("t1", "p1")
 
 	want := map[string]string{
-		Label:     "project:p1",
+		Label:     "project-p1",
 		TenantKey: "t1",
 		LevelKey:  "sandbox",
 	}

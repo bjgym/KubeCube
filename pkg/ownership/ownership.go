@@ -69,9 +69,14 @@ const (
 	LevelKey  = constants.NamespaceOwnerLevelLabel
 )
 
+// The value of Label is "<kind><separator><name>". The separator has to be a
+// character a label value may carry — alphanumerics, '-', '_' or '.' — because
+// the API server validates label values and rejects ':' outright, which left
+// every tenant and project namespace uncreatable while it was ':'. It mirrors
+// the namespace name prefixes (kubecube-tenant-, kubecube-project-).
 const (
-	tenantPrefix  = "tenant:"
-	projectPrefix = "project:"
+	tenantPrefix  = "tenant-"
+	projectPrefix = "project-"
 )
 
 // Tenant returns the label value for a namespace owned by a tenant. It is the
