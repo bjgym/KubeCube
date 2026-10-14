@@ -12,6 +12,13 @@
   instead of `:`: a label value may only carry alphanumerics, `-`, `_` or `.`, so
   the API server rejected every tenant and project namespace the controllers
   tried to create and tenancy never got past its first reconcile
+- a project whose tenant has no `spec.namespace` yet is requeued instead of
+  failed. The project controller can reconcile before the tenant controller has
+  recorded it, and it returned an error for that: a reconciler error logs a stack
+  trace and waits out an exponential backoff, so a freshly created project took
+  minutes to get its namespace instead of seconds. A project that carries no
+  tenant label at all is still an error, because that is a misconfiguration
+  rather than a race
 
 # v1.9.1
 

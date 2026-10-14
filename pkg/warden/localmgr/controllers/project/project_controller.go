@@ -21,6 +21,7 @@ import (
 	"fmt"
 	v1 "k8s.io/api/core/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -111,8 +112,11 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	labels := project.ObjectMeta.Labels
 	tenantName, ok := labels[constants.TenantLabel]
 	if !ok {
-		log.Error("this project do not content tenant label .metadata.labels.kubecube.io/tenant")
-		return ctrl.Result{}, fmt.Errorf("this project %s do not content tenant label", req.NamespacedName)
+		// A project without a tenant is not a transient state: the platform sets
+		// this label when it creates the project, so its absence is a real
+		// misconfiguration and worth reporting as one.
+		log.Error("project %s does not carry the tenant label %s", req.NamespacedName, constants.TenantLabel)
+		return ctrl.Result{}, fmt.Errorf("project %s does not carry the tenant label %s", req.NamespacedName, constants.TenantLabel)
 	}
 	tenant := tenantv1.Tenant{}
 	err = r.Client.Get(ctx, types.NamespacedName{Name: tenantName}, &tenant)
@@ -121,8 +125,14 @@ func (r *ProjectReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 	if tenant.Spec.Namespace == "" {
-		log.Error("the tenant %s do not content .spec.namespace", tenantName)
-		return ctrl.Result{}, fmt.Errorf("the tenant %s do not content .spec.namespace", tenantName)
+		// The tenant controller may not have recorded the tenant's namespace yet:
+		// a project can be reconciled first, and the two are independent objects
+		// with independent work queues. Returning an error here logs a reconciler
+		// error with a stack trace and then waits out an exponential backoff,
+		// which is why a freshly created project used to wait minutes for its
+		// namespace instead of seconds. Ask for this project again shortly.
+		clog.Info("tenant %s has no namespace yet, requeueing project %s", tenantName, req.NamespacedName)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	// The project's namespace is what the spaces live in. HNC used to
