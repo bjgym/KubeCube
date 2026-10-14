@@ -563,7 +563,10 @@ type scriptData struct {
 // @Router /api/v1/cube/clusters/addCluster  [post]
 func (h *handler) addCluster(c *gin.Context) {
 	const (
-		defaultNetworkType = "calico"
+		// The CNI the platform installs by default. It is metadata on the
+		// cluster record, not a constraint: a member cluster may run any CNI,
+		// and the platform never assumes one.
+		defaultNetworkType = "cilium"
 		defaultDescription = "this is member cluster"
 	)
 

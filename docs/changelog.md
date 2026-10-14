@@ -2,6 +2,10 @@
 
 ## Feature
 - the user kubeconfig endpoint accepts a `cluster` parameter and answers with that cluster's context only, which is what a cloud shell session fetches
+- a member cluster's network type defaults to `cilium`, the CNI the installer now
+  installs. The value is metadata on the cluster record: the platform reads a
+  member's networking from the cluster itself, never from this field, so a member
+  running any CNI is onboarded the same way
 
 ## BugFix
 - the namespace ownership label value separates its kind from its name with `-`
