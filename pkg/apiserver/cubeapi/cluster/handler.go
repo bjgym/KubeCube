@@ -36,6 +36,7 @@ import (
 
 	clusterv1 "github.com/kubecube-io/kubecube/pkg/apis/cluster/v1"
 	quotav1 "github.com/kubecube-io/kubecube/pkg/apis/quota/v1"
+	tenantv1 "github.com/kubecube-io/kubecube/pkg/apis/tenant/v1"
 	userv1 "github.com/kubecube-io/kubecube/pkg/apis/user/v1"
 	"github.com/kubecube-io/kubecube/pkg/authorizer/rbac"
 	"github.com/kubecube-io/kubecube/pkg/clients"
@@ -65,6 +66,7 @@ func (h *handler) AddApisTo(root *gin.Engine) {
 	r.POST("register", h.registerCluster)
 	r.POST("add", h.addCluster)
 	r.POST("nsquota", h.createNsAndQuota)
+	r.POST("nsquota/onboard", h.onboardNamespace)
 	r.GET("cuberesourcequotas", h.getCubeResourceQuota)
 }
 
@@ -763,6 +765,184 @@ func (h *handler) createNsAndQuota(c *gin.Context) {
 
 	clog.Debug("user %v create ns %v and resourceQuota %v in cluster %v success",
 		username, data.Space.Name, data.ResourceQuota.Name, data.Cluster)
+
+	response.SuccessJsonReturn(c, "success")
+}
+
+// onboardNamespace takes a namespace the platform does not own under
+// management: it labels it as a space of the project the request names and gives
+// it the ResourceQuota the console expects a space to have.
+//
+// The body is createNsAndQuota's, because the console builds one payload shape
+// for both: the namespace to adopt is named where a created one would be, and
+// the tenant and project are its labels. What differs is that the namespace is
+// already there and holds whatever it holds, so nothing is rolled back here —
+// see the quota step.
+//
+// @Summary onboard an unmanaged namespace as a space
+// @Description label an existing unmanaged namespace as a space of a project and create its resourceQuota
+// @Tags cluster
+// @Param nsAndQuota body nsAndQuota true "namespace and quota data"
+// @Success 200 {string} string "success"
+// @Failure 400 {object} errcode.ErrorInfo
+// @Failure 500 {object} errcode.ErrorInfo
+// @Router /api/v1/cube/clusters/nsquota/onboard  [post]
+func (h *handler) onboardNamespace(c *gin.Context) {
+	data := &nsAndQuota{}
+	err := c.ShouldBindJSON(data)
+	if err != nil {
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
+		return
+	}
+
+	ctx := c.Request.Context()
+	username := c.GetString(constants.UserName)
+
+	// Onboarding hands the namespace and everything already in it to the
+	// project's members. Creating a space only hands out a new one, which is why
+	// that path has no gate; this one changes who can reach data that exists, so
+	// it is a platform administrator's decision.
+	user := &userv1.User{}
+	err = h.Cache().Get(ctx, types.NamespacedName{Name: username}, user)
+	if err != nil {
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
+		return
+	}
+	if !userv1.IsPlatformAdmin(user) {
+		response.FailReturn(c, errcode.ForbiddenErr)
+		return
+	}
+
+	if data.Space == nil || data.ResourceQuota == nil {
+		response.FailReturn(c, errcode.InvalidBodyFormat)
+		return
+	}
+
+	labels, ok := data.Space.OwnershipLabels()
+	if !ok {
+		response.FailReturn(c, errcode.InvalidBodyFormat)
+		return
+	}
+	tenant := data.Space.Labels[constants.TenantLabel]
+	project := data.Space.Labels[constants.ProjectLabel]
+
+	cli := clients.Interface().Kubernetes(data.Cluster)
+	if cli == nil {
+		response.FailReturn(c, errcode.ClusterNotFoundError(data.Cluster))
+		return
+	}
+
+	ns := &v1.Namespace{}
+	err = cli.Direct().Get(ctx, types.NamespacedName{Name: data.Space.Name}, ns)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, "namespace %v does not exist in cluster %v", data.Space.Name, data.Cluster))
+			return
+		}
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
+		return
+	}
+
+	if err = onboardable(ns, tenant, project); err != nil {
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, "namespace %v cannot be onboarded: %v", ns.Name, err))
+		return
+	}
+
+	// The target has to exist before the labels are written. An owner label
+	// naming a project that is not there would leave the namespace managed by
+	// nothing, which is worse than leaving it unmanaged and visible as such.
+	projectCR := &tenantv1.Project{}
+	err = h.Cache().Get(ctx, types.NamespacedName{Name: project}, projectCR)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, "project %v does not exist", project))
+			return
+		}
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
+		return
+	}
+
+	// The project says which tenant it sits in, and that is the tenant a space of
+	// it belongs to. Writing the tenant the request asks for instead would put
+	// the namespace in one tenant while its project belongs to another, and a
+	// tenant-scoped reader resolves a namespace through this key.
+	if projectTenant := projectCR.Labels[constants.TenantLabel]; projectTenant != tenant {
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, "project %v belongs to tenant %v, not %v", project, projectTenant, tenant))
+		return
+	}
+
+	tenantCR := &tenantv1.Tenant{}
+	err = h.Cache().Get(ctx, types.NamespacedName{Name: tenant}, tenantCR)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, "tenant %v does not exist", tenant))
+			return
+		}
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
+		return
+	}
+
+	// The quota has to land in the namespace being onboarded, whatever the body
+	// says: a quota in another namespace would leave this one unadmitted and
+	// create a quota where nobody asked for one.
+	if data.ResourceQuota.Name == "" || data.ResourceQuota.Namespace != ns.Name {
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, "the resourceQuota must be named and created in namespace %v", ns.Name))
+		return
+	}
+
+	// Everything that can be known before the namespace changes is known here, so
+	// that the two writes that follow are the only things left to fail. A quota
+	// already under the name this space is supposed to use means a previous
+	// attempt got this far; the namespace is still unmanaged, so the leftover can
+	// be looked at and removed before trying again.
+	leftover := &v1.ResourceQuota{}
+	err = cli.Direct().Get(ctx, types.NamespacedName{Namespace: ns.Name, Name: data.ResourceQuota.Name}, leftover)
+	if err == nil {
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest,
+			"namespace %v already holds a resourceQuota named %v", ns.Name, data.ResourceQuota.Name))
+		return
+	}
+	if !errors.IsNotFound(err) {
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
+		return
+	}
+
+	// The labels are the commit point: every reader of a namespace's tenancy goes
+	// through them, and from here on the namespace is a space of the project —
+	// its members reach it, the quota webhook admits it under the project's
+	// chain, and deleting the project deletes it.
+	//
+	// They are written before the quota because the webhook selects on the owner
+	// label: a quota created first would be admitted without ever being checked
+	// against the project's quota chain, which is the check that keeps a space
+	// from being given more than its project has.
+	patch := client.MergeFrom(ns.DeepCopy())
+	if ns.Labels == nil {
+		ns.Labels = make(map[string]string)
+	}
+	for k, v := range labels {
+		ns.Labels[k] = v
+	}
+	err = cli.Direct().Patch(ctx, ns, patch)
+	if err != nil {
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
+		return
+	}
+
+	err = cli.Direct().Create(ctx, data.ResourceQuota)
+	if err != nil {
+		// There is no rollback: the namespace is managed from here on, and undoing
+		// that by deleting it would take everything it holds with it. The failure
+		// is reported as the state it leaves behind, so an administrator can see
+		// that the space exists without its quota rather than that nothing
+		// happened.
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest,
+			"namespace %v is now managed by project %v, but its resourceQuota was not created: %v", ns.Name, project, err))
+		return
+	}
+
+	clog.Info("user %v onboarded namespace %v into project %v of tenant %v in cluster %v",
+		username, ns.Name, project, tenant, data.Cluster)
 
 	response.SuccessJsonReturn(c, "success")
 }

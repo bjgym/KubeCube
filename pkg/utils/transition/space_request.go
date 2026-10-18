@@ -43,17 +43,38 @@ type SpaceRequest struct {
 // subnamespace annotation, and the ownership labels answer the same question
 // without it.
 func (r *SpaceRequest) Namespace() *v1.Namespace {
-	if r.Labels == nil {
+	labels, ok := r.OwnershipLabels()
+	if !ok {
 		return nil
 	}
 
 	return &v1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: r.Name,
-			Labels: ownership.SpaceLabels(
-				r.Labels[constants.TenantLabel],
-				r.Labels[constants.ProjectLabel],
-			),
+			Name:   r.Name,
+			Labels: labels,
 		},
 	}
+}
+
+// OwnershipLabels are the three ownership labels for the tenant and project the
+// request names.
+//
+// Both the create path and the path that takes an existing namespace under
+// management write them from here, so a namespace cannot be labelled one way
+// when the platform creates it and another when it adopts one: the label set is
+// what every reader of a namespace's tenancy goes through.
+//
+// It reports false when the request does not name both a tenant and a project.
+// SpaceLabels would otherwise write an owner of "project-" with no name, which
+// no reader can resolve — a namespace managed by nothing, which is worse than a
+// refused request.
+func (r *SpaceRequest) OwnershipLabels() (map[string]string, bool) {
+	tenant := r.Labels[constants.TenantLabel]
+	project := r.Labels[constants.ProjectLabel]
+
+	if tenant == "" || project == "" {
+		return nil, false
+	}
+
+	return ownership.SpaceLabels(tenant, project), true
 }
