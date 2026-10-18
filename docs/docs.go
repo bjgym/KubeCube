@@ -111,7 +111,7 @@ var doc = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "hnc level",
+                        "description": "tenancy level",
                         "name": "level",
                         "in": "query",
                         "required": true
@@ -245,6 +245,44 @@ var doc = `{
                 }
             }
         },
+        "/api/v1/cube/authorization/roles/:name": {
+            "delete": {
+                "description": "delete a role that is not built in and that nobody is bound to",
+                "tags": [
+                    "authorization"
+                ],
+                "summary": "Delete role",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "role name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.SuccessInfo"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errcode.ErrorInfo"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/errcode.ErrorInfo"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/cube/authorization/tenants": {
             "get": {
                 "description": "get all visible tenant for user",
@@ -334,7 +372,7 @@ var doc = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/pkg_apiserver_cubeapi_cluster.scriptData"
+                            "$ref": "#/definitions/github.com_kubecube-io_kubecube_pkg_apiserver_cubeapi_cluster.scriptData"
                         }
                     }
                 ],
@@ -391,7 +429,7 @@ var doc = `{
                     "200": {
                         "description": "{\"total\":3,\"items\":[{\"clusterName\":\"member-1\",\"clusterDescription\":\"this is member cluster\",\"networkType\":\"calico\",\"harborAddr\":\"\",\"isMemberCluster\":true,\"createTime\":\"2022-05-06T11:33:15+08:00\",\"kubeApiServer\":\"https://10.173.33.3:6443\",\"status\":\"normal\",\"nodeCount\":1,\"namespaceCount\":19,\"usedCpu\":549,\"totalCpu\":8000,\"usedMem\":7276,\"totalMem\":16648,\"totalStorage\":0,\"usedStorage\":0,\"totalStorageEphemeral\":42208,\"usedStorageEphemeral\":0,\"totalGpu\":0,\"usedGpu\":0,\"usedCpuRequest\":3300,\"usedCpuLimit\":4200,\"usedMemRequest\":3874,\"usedMemLimit\":7265},{\"clusterName\":\"pivot-cluster\",\"clusterDescription\":\"There is a pivot cluster dating with KubeCube\",\"networkType\":\"\",\"harborAddr\":\"\",\"isMemberCluster\":false,\"createTime\":\"2022-04-28T14:41:26+08:00\",\"kubeApiServer\":\"10.173.33.2:6443\",\"status\":\"normal\",\"nodeCount\":1,\"namespaceCount\":18,\"usedCpu\":886,\"totalCpu\":8000,\"usedMem\":8996,\"totalMem\":16648,\"totalStorage\":0,\"usedStorage\":0,\"totalStorageEphemeral\":42208,\"usedStorageEphemeral\":0,\"totalGpu\":0,\"usedGpu\":0,\"usedCpuRequest\":3000,\"usedCpuLimit\":3900,\"usedMemRequest\":3469,\"usedMemLimit\":6860},{\"clusterName\":\"member-2\",\"clusterDescription\":\"this is member cluster\",\"networkType\":\"calico\",\"harborAddr\":\"\",\"isMemberCluster\":true,\"createTime\":\"2022-04-28T16:12:13+08:00\",\"kubeApiServer\":\"10.173.33.4:6443\",\"status\":\"normal\",\"nodeCount\":1,\"namespaceCount\":19,\"usedCpu\":929,\"totalCpu\":8000,\"usedMem\":7187,\"totalMem\":16648,\"totalStorage\":0,\"usedStorage\":0,\"totalStorageEphemeral\":42208,\"usedStorageEphemeral\":0,\"totalGpu\":0,\"usedGpu\":0,\"usedCpuRequest\":3000,\"usedCpuLimit\":3900,\"usedMemRequest\":3469,\"usedMemLimit\":6860}]}",
                         "schema": {
-                            "$ref": "#/definitions/pkg_apiserver_cubeapi_cluster.result"
+                            "$ref": "#/definitions/github.com_kubecube-io_kubecube_pkg_apiserver_cubeapi_cluster.result"
                         }
                     },
                     "500": {
@@ -449,7 +487,47 @@ var doc = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/pkg_apiserver_cubeapi_cluster.nsAndQuota"
+                            "$ref": "#/definitions/github.com_kubecube-io_kubecube_pkg_apiserver_cubeapi_cluster.nsAndQuota"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errcode.ErrorInfo"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/errcode.ErrorInfo"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/cube/clusters/nsquota/onboard": {
+            "post": {
+                "description": "label an existing unmanaged namespace as a space of a project and create its resourceQuota",
+                "tags": [
+                    "cluster"
+                ],
+                "summary": "onboard an unmanaged namespace as a space",
+                "parameters": [
+                    {
+                        "description": "namespace and quota data",
+                        "name": "nsAndQuota",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github.com_kubecube-io_kubecube_pkg_apiserver_cubeapi_cluster.nsAndQuota"
                         }
                     }
                 ],
@@ -535,22 +613,6 @@ var doc = `{
                         "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/errcode.ErrorInfo"
-                        }
-                    }
-                }
-            }
-        },
-        "/api/v1/cube/healthz": {
-            "get": {
-                "produces": [
-                    "application/json"
-                ],
-                "summary": "health check",
-                "responses": {
-                    "200": {
-                        "description": "healthy",
-                        "schema": {
-                            "type": "string"
                         }
                     }
                 }
@@ -996,6 +1058,22 @@ var doc = `{
                     }
                 }
             }
+        },
+        "/healthz": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "health check",
+                "responses": {
+                    "200": {
+                        "description": "healthy",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1024,6 +1102,12 @@ var doc = `{
         "github.com_kubecube-io_kubecube_pkg_apiserver_cubeapi_cluster.clusterInfo": {
             "type": "object",
             "properties": {
+                "annotations": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "clusterDescription": {
                     "type": "string"
                 },
@@ -1042,8 +1126,17 @@ var doc = `{
                 "isMemberCluster": {
                     "type": "boolean"
                 },
+                "isWritable": {
+                    "type": "boolean"
+                },
                 "kubeApiServer": {
                     "type": "string"
+                },
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "namespaceCount": {
                     "type": "integer"
@@ -1052,7 +1145,6 @@ var doc = `{
                     "type": "string"
                 },
                 "nodeCount": {
-                    "description": "todo(weilaaa): move to monitor info",
                     "type": "integer"
                 },
                 "status": {
@@ -1111,8 +1203,8 @@ var doc = `{
                 "resourceQuota": {
                     "$ref": "#/definitions/v1.ResourceQuota"
                 },
-                "subNamespaceAnchor": {
-                    "$ref": "#/definitions/v1alpha2.SubnamespaceAnchor"
+                "space": {
+                    "$ref": "#/definitions/transition.SpaceRequest"
                 }
             }
         },
@@ -1231,6 +1323,12 @@ var doc = `{
         "pkg_apiserver_cubeapi_cluster.clusterInfo": {
             "type": "object",
             "properties": {
+                "annotations": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "clusterDescription": {
                     "type": "string"
                 },
@@ -1249,8 +1347,17 @@ var doc = `{
                 "isMemberCluster": {
                     "type": "boolean"
                 },
+                "isWritable": {
+                    "type": "boolean"
+                },
                 "kubeApiServer": {
                     "type": "string"
+                },
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "namespaceCount": {
                     "type": "integer"
@@ -1259,7 +1366,6 @@ var doc = `{
                     "type": "string"
                 },
                 "nodeCount": {
-                    "description": "todo(weilaaa): move to monitor info",
                     "type": "integer"
                 },
                 "status": {
@@ -1318,8 +1424,8 @@ var doc = `{
                 "resourceQuota": {
                     "$ref": "#/definitions/v1.ResourceQuota"
                 },
-                "subNamespaceAnchor": {
-                    "$ref": "#/definitions/v1alpha2.SubnamespaceAnchor"
+                "space": {
+                    "$ref": "#/definitions/transition.SpaceRequest"
                 }
             }
         },
@@ -1440,6 +1546,86 @@ var doc = `{
                 }
             }
         },
+        "transition.SpaceRequest": {
+            "type": "object",
+            "properties": {
+                "annotations": {
+                    "description": "Annotations is an unstructured key value map stored with a resource that may be\nset by external tools to store and retrieve arbitrary metadata. They are not\nqueryable and should be preserved when modifying objects.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations\n+optional",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "creationTimestamp": {
+                    "description": "CreationTimestamp is a timestamp representing the server time when this object was\ncreated. It is not guaranteed to be set in happens-before order across separate operations.\nClients may not set this value. It is represented in RFC3339 form and is in UTC.\n\nPopulated by the system.\nRead-only.\nNull for lists.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata\n+optional",
+                    "type": "string"
+                },
+                "deletionGracePeriodSeconds": {
+                    "description": "Number of seconds allowed for this object to gracefully terminate before\nit will be removed from the system. Only set when deletionTimestamp is also set.\nMay only be shortened.\nRead-only.\n+optional",
+                    "type": "integer"
+                },
+                "deletionTimestamp": {
+                    "description": "DeletionTimestamp is RFC 3339 date and time at which this resource will be deleted. This\nfield is set by the server when a graceful deletion is requested by the user, and is not\ndirectly settable by a client. The resource is expected to be deleted (no longer visible\nfrom resource lists, and not reachable by name) after the time in this field, once the\nfinalizers list is empty. As long as the finalizers list contains items, deletion is blocked.\nOnce the deletionTimestamp is set, this value may not be unset or be set further into the\nfuture, although it may be shortened or the resource may be deleted prior to this time.\nFor example, a user may request that a pod is deleted in 30 seconds. The Kubelet will react\nby sending a graceful termination signal to the containers in the pod. After that 30 seconds,\nthe Kubelet will send a hard termination signal (SIGKILL) to the container and after cleanup,\nremove the pod from the API. In the presence of network partitions, this object may still\nexist after this timestamp, until an administrator or automated process can determine the\nresource is fully terminated.\nIf not set, graceful deletion of the object has not been requested.\n\nPopulated by the system when a graceful deletion is requested.\nRead-only.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata\n+optional",
+                    "type": "string"
+                },
+                "finalizers": {
+                    "description": "Must be empty before the object is deleted from the registry. Each entry\nis an identifier for the responsible component that will remove the entry\nfrom the list. If the deletionTimestamp of the object is non-nil, entries\nin this list can only be removed.\nFinalizers may be processed and removed in any order.  Order is NOT enforced\nbecause it introduces significant risk of stuck finalizers.\nfinalizers is a shared field, any actor with permission can reorder it.\nIf the finalizer list is processed in order, then this can lead to a situation\nin which the component responsible for the first finalizer in the list is\nwaiting for a signal (field value, external system, or other) produced by a\ncomponent responsible for a finalizer later in the list, resulting in a deadlock.\nWithout enforced ordering finalizers are free to order amongst themselves and\nare not vulnerable to ordering changes in the list.\n+optional\n+patchStrategy=merge",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "generateName": {
+                    "description": "GenerateName is an optional prefix, used by the server, to generate a unique\nname ONLY IF the Name field has not been provided.\nIf this field is used, the name returned to the client will be different\nthan the name passed. This value will also be combined with a unique suffix.\nThe provided value has the same validation rules as the Name field,\nand may be truncated by the length of the suffix required to make the value\nunique on the server.\n\nIf this field is specified and the generated name exists, the server will return a 409.\n\nApplied only if Name is not specified.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#idempotency\n+optional",
+                    "type": "string"
+                },
+                "generation": {
+                    "description": "A sequence number representing a specific generation of the desired state.\nPopulated by the system. Read-only.\n+optional",
+                    "type": "integer"
+                },
+                "labels": {
+                    "description": "Map of string keys and values that can be used to organize and categorize\n(scope and select) objects. May match selectors of replication controllers\nand services.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels\n+optional",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "managedFields": {
+                    "description": "ManagedFields maps workflow-id and version to the set of fields\nthat are managed by that workflow. This is mostly for internal\nhousekeeping, and users typically shouldn't need to set or\nunderstand this field. A workflow can be the user's name, a\ncontroller's name, or the name of a specific apply path like\n\"ci-cd\". The set of fields is always in the version that the\nworkflow used when modifying the object.\n\n+optional",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.ManagedFieldsEntry"
+                    }
+                },
+                "name": {
+                    "description": "Name must be unique within a namespace. Is required when creating resources, although\nsome resources may allow a client to request the generation of an appropriate name\nautomatically. Name is primarily intended for creation idempotence and configuration\ndefinition.\nCannot be updated.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#names\n+optional",
+                    "type": "string"
+                },
+                "namespace": {
+                    "description": "Namespace defines the space within which each name must be unique. An empty namespace is\nequivalent to the \"default\" namespace, but \"default\" is the canonical representation.\nNot all objects are required to be scoped to a namespace - the value of this field for\nthose objects will be empty.\n\nMust be a DNS_LABEL.\nCannot be updated.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces\n+optional",
+                    "type": "string"
+                },
+                "ownerReferences": {
+                    "description": "List of objects depended by this object. If ALL objects in the list have\nbeen deleted, this object will be garbage collected. If this object is managed by a controller,\nthen an entry in this list will point to this controller, with the controller field set to true.\nThere cannot be more than one managing controller.\n+optional\n+patchMergeKey=uid\n+patchStrategy=merge",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.OwnerReference"
+                    }
+                },
+                "resourceVersion": {
+                    "description": "An opaque value that represents the internal version of this object that can\nbe used by clients to determine when objects have changed. May be used for optimistic\nconcurrency, change detection, and the watch operation on a resource or set of resources.\nClients must treat these values as opaque and passed unmodified back to the server.\nThey may only be valid for a particular resource or set of resources.\n\nPopulated by the system.\nRead-only.\nValue must be treated as opaque by clients and .\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency\n+optional",
+                    "type": "string"
+                },
+                "selfLink": {
+                    "description": "Deprecated: selfLink is a legacy read-only field that is no longer populated by the system.\n+optional",
+                    "type": "string"
+                },
+                "uid": {
+                    "description": "UID is the unique in time and space value for this object. It is typically generated by\nthe server on successful creation of a resource and is not allowed to change on PUT\noperations.\n\nPopulated by the system.\nRead-only.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#uids\n+optional",
+                    "type": "string"
+                }
+            }
+        },
         "v1.FieldsV1": {
             "type": "object"
         },
@@ -1447,7 +1633,7 @@ var doc = `{
             "type": "object",
             "properties": {
                 "annotations": {
-                    "description": "Annotations is an unstructured key value map stored with a resource that may be\nset by external tools to store and retrieve arbitrary metadata. They are not\nqueryable and should be preserved when modifying objects.\nMore info: http://kubernetes.io/docs/user-guide/annotations\n+optional",
+                    "description": "Annotations is an unstructured key value map stored with a resource that may be\nset by external tools to store and retrieve arbitrary metadata. They are not\nqueryable and should be preserved when modifying objects.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations\n+optional",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -1455,10 +1641,6 @@ var doc = `{
                 },
                 "apiVersion": {
                     "description": "APIVersion defines the versioned schema of this representation of an object.\nServers should convert recognized schemas to the latest internal value, and\nmay reject unrecognized values.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources\n+optional",
-                    "type": "string"
-                },
-                "clusterName": {
-                    "description": "The name of the cluster which the object belongs to.\nThis is used to distinguish resources with same name and namespace in different clusters.\nThis field is not set anywhere right now and apiserver is going to ignore it if set in create or update request.\n+optional",
                     "type": "string"
                 },
                 "creationTimestamp": {
@@ -1481,7 +1663,7 @@ var doc = `{
                     }
                 },
                 "generateName": {
-                    "description": "GenerateName is an optional prefix, used by the server, to generate a unique\nname ONLY IF the Name field has not been provided.\nIf this field is used, the name returned to the client will be different\nthan the name passed. This value will also be combined with a unique suffix.\nThe provided value has the same validation rules as the Name field,\nand may be truncated by the length of the suffix required to make the value\nunique on the server.\n\nIf this field is specified and the generated name exists, the server will\nNOT return a 409 - instead, it will either return 201 Created or 500 with Reason\nServerTimeout indicating a unique name could not be found in the time allotted, and the client\nshould retry (optionally after the time indicated in the Retry-After header).\n\nApplied only if Name is not specified.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#idempotency\n+optional",
+                    "description": "GenerateName is an optional prefix, used by the server, to generate a unique\nname ONLY IF the Name field has not been provided.\nIf this field is used, the name returned to the client will be different\nthan the name passed. This value will also be combined with a unique suffix.\nThe provided value has the same validation rules as the Name field,\nand may be truncated by the length of the suffix required to make the value\nunique on the server.\n\nIf this field is specified and the generated name exists, the server will return a 409.\n\nApplied only if Name is not specified.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#idempotency\n+optional",
                     "type": "string"
                 },
                 "generation": {
@@ -1493,7 +1675,7 @@ var doc = `{
                     "type": "string"
                 },
                 "labels": {
-                    "description": "Map of string keys and values that can be used to organize and categorize\n(scope and select) objects. May match selectors of replication controllers\nand services.\nMore info: http://kubernetes.io/docs/user-guide/labels\n+optional",
+                    "description": "Map of string keys and values that can be used to organize and categorize\n(scope and select) objects. May match selectors of replication controllers\nand services.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels\n+optional",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -1507,11 +1689,11 @@ var doc = `{
                     }
                 },
                 "name": {
-                    "description": "Name must be unique within a namespace. Is required when creating resources, although\nsome resources may allow a client to request the generation of an appropriate name\nautomatically. Name is primarily intended for creation idempotence and configuration\ndefinition.\nCannot be updated.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#names\n+optional",
+                    "description": "Name must be unique within a namespace. Is required when creating resources, although\nsome resources may allow a client to request the generation of an appropriate name\nautomatically. Name is primarily intended for creation idempotence and configuration\ndefinition.\nCannot be updated.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#names\n+optional",
                     "type": "string"
                 },
                 "namespace": {
-                    "description": "Namespace defines the space within which each name must be unique. An empty namespace is\nequivalent to the \"default\" namespace, but \"default\" is the canonical representation.\nNot all objects are required to be scoped to a namespace - the value of this field for\nthose objects will be empty.\n\nMust be a DNS_LABEL.\nCannot be updated.\nMore info: http://kubernetes.io/docs/user-guide/namespaces\n+optional",
+                    "description": "Namespace defines the space within which each name must be unique. An empty namespace is\nequivalent to the \"default\" namespace, but \"default\" is the canonical representation.\nNot all objects are required to be scoped to a namespace - the value of this field for\nthose objects will be empty.\n\nMust be a DNS_LABEL.\nCannot be updated.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces\n+optional",
                     "type": "string"
                 },
                 "ownerReferences": {
@@ -1526,7 +1708,7 @@ var doc = `{
                     "type": "string"
                 },
                 "selfLink": {
-                    "description": "SelfLink is a URL representing this object.\nPopulated by the system.\nRead-only.\n\nDEPRECATED\nKubernetes will stop propagating this field in 1.20 release and the field is planned\nto be removed in 1.21 release.\n+optional",
+                    "description": "Deprecated: selfLink is a legacy read-only field that is no longer populated by the system.\n+optional",
                     "type": "string"
                 },
                 "spec": {
@@ -1536,7 +1718,7 @@ var doc = `{
                     "$ref": "#/definitions/v1.KeyStatus"
                 },
                 "uid": {
-                    "description": "UID is the unique in time and space value for this object. It is typically generated by\nthe server on successful creation of a resource and is not allowed to change on PUT\noperations.\n\nPopulated by the system.\nRead-only.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#uids\n+optional",
+                    "description": "UID is the unique in time and space value for this object. It is typically generated by\nthe server on successful creation of a resource and is not allowed to change on PUT\noperations.\n\nPopulated by the system.\nRead-only.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#uids\n+optional",
                     "type": "string"
                 }
             }
@@ -1571,7 +1753,7 @@ var doc = `{
                     "type": "string"
                 },
                 "selfLink": {
-                    "description": "selfLink is a URL representing this object.\nPopulated by the system.\nRead-only.\n\nDEPRECATED\nKubernetes will stop propagating this field in 1.20 release and the field is planned\nto be removed in 1.21 release.\n+optional",
+                    "description": "Deprecated: selfLink is a legacy read-only field that is no longer populated by the system.\n+optional",
                     "type": "string"
                 }
             }
@@ -1613,8 +1795,12 @@ var doc = `{
                     "description": "Operation is the type of operation which lead to this ManagedFieldsEntry being created.\nThe only valid values for this field are 'Apply' and 'Update'.",
                     "type": "string"
                 },
+                "subresource": {
+                    "description": "Subresource is the name of the subresource used to update that object, or\nempty string if the object was updated through the main resource. The\nvalue of this field is used to distinguish between managers, even if they\nshare the same name. For example, a status update will be distinct from a\nregular update using the same manager name.\nNote that the APIVersion field is not related to the Subresource field and\nit always corresponds to the version of the main resource.",
+                    "type": "string"
+                },
                 "time": {
-                    "description": "Time is timestamp of when these fields were set. It should always be empty if Operation is 'Apply'\n+optional",
+                    "description": "Time is the timestamp of when the ManagedFields entry was added. The\ntimestamp will also be updated if a field is added, the manager\nchanges any of the owned fields value or removes a field. The\ntimestamp does not update when a field is removed from the entry\nbecause another manager took it over.\n+optional",
                     "type": "string"
                 }
             }
@@ -1627,7 +1813,7 @@ var doc = `{
                     "type": "string"
                 },
                 "blockOwnerDeletion": {
-                    "description": "If true, AND if the owner has the \"foregroundDeletion\" finalizer, then\nthe owner cannot be deleted from the key-value store until this\nreference is removed.\nDefaults to false.\nTo set this field, a user needs \"delete\" permission of the owner,\notherwise 422 (Unprocessable Entity) will be returned.\n+optional",
+                    "description": "If true, AND if the owner has the \"foregroundDeletion\" finalizer, then\nthe owner cannot be deleted from the key-value store until this\nreference is removed.\nSee https://kubernetes.io/docs/concepts/architecture/garbage-collection/#foreground-deletion\nfor how the garbage collector interacts with this field and enforces the foreground deletion.\nDefaults to false.\nTo set this field, a user needs \"delete\" permission of the owner,\notherwise 422 (Unprocessable Entity) will be returned.\n+optional",
                     "type": "boolean"
                 },
                 "controller": {
@@ -1639,11 +1825,22 @@ var doc = `{
                     "type": "string"
                 },
                 "name": {
-                    "description": "Name of the referent.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#names",
+                    "description": "Name of the referent.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#names",
                     "type": "string"
                 },
                 "uid": {
-                    "description": "UID of the referent.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#uids",
+                    "description": "UID of the referent.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#uids",
+                    "type": "string"
+                }
+            }
+        },
+        "v1.ProjectInfo": {
+            "type": "object",
+            "properties": {
+                "project": {
+                    "type": "string"
+                },
+                "tenant": {
                     "type": "string"
                 }
             }
@@ -1658,7 +1855,7 @@ var doc = `{
             "type": "object",
             "properties": {
                 "annotations": {
-                    "description": "Annotations is an unstructured key value map stored with a resource that may be\nset by external tools to store and retrieve arbitrary metadata. They are not\nqueryable and should be preserved when modifying objects.\nMore info: http://kubernetes.io/docs/user-guide/annotations\n+optional",
+                    "description": "Annotations is an unstructured key value map stored with a resource that may be\nset by external tools to store and retrieve arbitrary metadata. They are not\nqueryable and should be preserved when modifying objects.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations\n+optional",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -1666,10 +1863,6 @@ var doc = `{
                 },
                 "apiVersion": {
                     "description": "APIVersion defines the versioned schema of this representation of an object.\nServers should convert recognized schemas to the latest internal value, and\nmay reject unrecognized values.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources\n+optional",
-                    "type": "string"
-                },
-                "clusterName": {
-                    "description": "The name of the cluster which the object belongs to.\nThis is used to distinguish resources with same name and namespace in different clusters.\nThis field is not set anywhere right now and apiserver is going to ignore it if set in create or update request.\n+optional",
                     "type": "string"
                 },
                 "creationTimestamp": {
@@ -1692,7 +1885,7 @@ var doc = `{
                     }
                 },
                 "generateName": {
-                    "description": "GenerateName is an optional prefix, used by the server, to generate a unique\nname ONLY IF the Name field has not been provided.\nIf this field is used, the name returned to the client will be different\nthan the name passed. This value will also be combined with a unique suffix.\nThe provided value has the same validation rules as the Name field,\nand may be truncated by the length of the suffix required to make the value\nunique on the server.\n\nIf this field is specified and the generated name exists, the server will\nNOT return a 409 - instead, it will either return 201 Created or 500 with Reason\nServerTimeout indicating a unique name could not be found in the time allotted, and the client\nshould retry (optionally after the time indicated in the Retry-After header).\n\nApplied only if Name is not specified.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#idempotency\n+optional",
+                    "description": "GenerateName is an optional prefix, used by the server, to generate a unique\nname ONLY IF the Name field has not been provided.\nIf this field is used, the name returned to the client will be different\nthan the name passed. This value will also be combined with a unique suffix.\nThe provided value has the same validation rules as the Name field,\nand may be truncated by the length of the suffix required to make the value\nunique on the server.\n\nIf this field is specified and the generated name exists, the server will return a 409.\n\nApplied only if Name is not specified.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#idempotency\n+optional",
                     "type": "string"
                 },
                 "generation": {
@@ -1704,7 +1897,7 @@ var doc = `{
                     "type": "string"
                 },
                 "labels": {
-                    "description": "Map of string keys and values that can be used to organize and categorize\n(scope and select) objects. May match selectors of replication controllers\nand services.\nMore info: http://kubernetes.io/docs/user-guide/labels\n+optional",
+                    "description": "Map of string keys and values that can be used to organize and categorize\n(scope and select) objects. May match selectors of replication controllers\nand services.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels\n+optional",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -1718,11 +1911,11 @@ var doc = `{
                     }
                 },
                 "name": {
-                    "description": "Name must be unique within a namespace. Is required when creating resources, although\nsome resources may allow a client to request the generation of an appropriate name\nautomatically. Name is primarily intended for creation idempotence and configuration\ndefinition.\nCannot be updated.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#names\n+optional",
+                    "description": "Name must be unique within a namespace. Is required when creating resources, although\nsome resources may allow a client to request the generation of an appropriate name\nautomatically. Name is primarily intended for creation idempotence and configuration\ndefinition.\nCannot be updated.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#names\n+optional",
                     "type": "string"
                 },
                 "namespace": {
-                    "description": "Namespace defines the space within which each name must be unique. An empty namespace is\nequivalent to the \"default\" namespace, but \"default\" is the canonical representation.\nNot all objects are required to be scoped to a namespace - the value of this field for\nthose objects will be empty.\n\nMust be a DNS_LABEL.\nCannot be updated.\nMore info: http://kubernetes.io/docs/user-guide/namespaces\n+optional",
+                    "description": "Namespace defines the space within which each name must be unique. An empty namespace is\nequivalent to the \"default\" namespace, but \"default\" is the canonical representation.\nNot all objects are required to be scoped to a namespace - the value of this field for\nthose objects will be empty.\n\nMust be a DNS_LABEL.\nCannot be updated.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces\n+optional",
                     "type": "string"
                 },
                 "ownerReferences": {
@@ -1737,7 +1930,7 @@ var doc = `{
                     "type": "string"
                 },
                 "selfLink": {
-                    "description": "SelfLink is a URL representing this object.\nPopulated by the system.\nRead-only.\n\nDEPRECATED\nKubernetes will stop propagating this field in 1.20 release and the field is planned\nto be removed in 1.21 release.\n+optional",
+                    "description": "Deprecated: selfLink is a legacy read-only field that is no longer populated by the system.\n+optional",
                     "type": "string"
                 },
                 "spec": {
@@ -1749,7 +1942,7 @@ var doc = `{
                     "$ref": "#/definitions/v1.ResourceQuotaStatus"
                 },
                 "uid": {
-                    "description": "UID is the unique in time and space value for this object. It is typically generated by\nthe server on successful creation of a resource and is not allowed to change on PUT\noperations.\n\nPopulated by the system.\nRead-only.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#uids\n+optional",
+                    "description": "UID is the unique in time and space value for this object. It is typically generated by\nthe server on successful creation of a resource and is not allowed to change on PUT\noperations.\n\nPopulated by the system.\nRead-only.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#uids\n+optional",
                     "type": "string"
                 }
             }
@@ -1792,7 +1985,7 @@ var doc = `{
             "type": "object",
             "properties": {
                 "annotations": {
-                    "description": "Annotations is an unstructured key value map stored with a resource that may be\nset by external tools to store and retrieve arbitrary metadata. They are not\nqueryable and should be preserved when modifying objects.\nMore info: http://kubernetes.io/docs/user-guide/annotations\n+optional",
+                    "description": "Annotations is an unstructured key value map stored with a resource that may be\nset by external tools to store and retrieve arbitrary metadata. They are not\nqueryable and should be preserved when modifying objects.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations\n+optional",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -1800,10 +1993,6 @@ var doc = `{
                 },
                 "apiVersion": {
                     "description": "APIVersion defines the versioned schema of this representation of an object.\nServers should convert recognized schemas to the latest internal value, and\nmay reject unrecognized values.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources\n+optional",
-                    "type": "string"
-                },
-                "clusterName": {
-                    "description": "The name of the cluster which the object belongs to.\nThis is used to distinguish resources with same name and namespace in different clusters.\nThis field is not set anywhere right now and apiserver is going to ignore it if set in create or update request.\n+optional",
                     "type": "string"
                 },
                 "creationTimestamp": {
@@ -1826,7 +2015,7 @@ var doc = `{
                     }
                 },
                 "generateName": {
-                    "description": "GenerateName is an optional prefix, used by the server, to generate a unique\nname ONLY IF the Name field has not been provided.\nIf this field is used, the name returned to the client will be different\nthan the name passed. This value will also be combined with a unique suffix.\nThe provided value has the same validation rules as the Name field,\nand may be truncated by the length of the suffix required to make the value\nunique on the server.\n\nIf this field is specified and the generated name exists, the server will\nNOT return a 409 - instead, it will either return 201 Created or 500 with Reason\nServerTimeout indicating a unique name could not be found in the time allotted, and the client\nshould retry (optionally after the time indicated in the Retry-After header).\n\nApplied only if Name is not specified.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#idempotency\n+optional",
+                    "description": "GenerateName is an optional prefix, used by the server, to generate a unique\nname ONLY IF the Name field has not been provided.\nIf this field is used, the name returned to the client will be different\nthan the name passed. This value will also be combined with a unique suffix.\nThe provided value has the same validation rules as the Name field,\nand may be truncated by the length of the suffix required to make the value\nunique on the server.\n\nIf this field is specified and the generated name exists, the server will return a 409.\n\nApplied only if Name is not specified.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#idempotency\n+optional",
                     "type": "string"
                 },
                 "generation": {
@@ -1838,7 +2027,7 @@ var doc = `{
                     "type": "string"
                 },
                 "labels": {
-                    "description": "Map of string keys and values that can be used to organize and categorize\n(scope and select) objects. May match selectors of replication controllers\nand services.\nMore info: http://kubernetes.io/docs/user-guide/labels\n+optional",
+                    "description": "Map of string keys and values that can be used to organize and categorize\n(scope and select) objects. May match selectors of replication controllers\nand services.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels\n+optional",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -1852,11 +2041,11 @@ var doc = `{
                     }
                 },
                 "name": {
-                    "description": "Name must be unique within a namespace. Is required when creating resources, although\nsome resources may allow a client to request the generation of an appropriate name\nautomatically. Name is primarily intended for creation idempotence and configuration\ndefinition.\nCannot be updated.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#names\n+optional",
+                    "description": "Name must be unique within a namespace. Is required when creating resources, although\nsome resources may allow a client to request the generation of an appropriate name\nautomatically. Name is primarily intended for creation idempotence and configuration\ndefinition.\nCannot be updated.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#names\n+optional",
                     "type": "string"
                 },
                 "namespace": {
-                    "description": "Namespace defines the space within which each name must be unique. An empty namespace is\nequivalent to the \"default\" namespace, but \"default\" is the canonical representation.\nNot all objects are required to be scoped to a namespace - the value of this field for\nthose objects will be empty.\n\nMust be a DNS_LABEL.\nCannot be updated.\nMore info: http://kubernetes.io/docs/user-guide/namespaces\n+optional",
+                    "description": "Namespace defines the space within which each name must be unique. An empty namespace is\nequivalent to the \"default\" namespace, but \"default\" is the canonical representation.\nNot all objects are required to be scoped to a namespace - the value of this field for\nthose objects will be empty.\n\nMust be a DNS_LABEL.\nCannot be updated.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces\n+optional",
                     "type": "string"
                 },
                 "ownerReferences": {
@@ -1875,7 +2064,7 @@ var doc = `{
                     "$ref": "#/definitions/v1.RoleRef"
                 },
                 "selfLink": {
-                    "description": "SelfLink is a URL representing this object.\nPopulated by the system.\nRead-only.\n\nDEPRECATED\nKubernetes will stop propagating this field in 1.20 release and the field is planned\nto be removed in 1.21 release.\n+optional",
+                    "description": "Deprecated: selfLink is a legacy read-only field that is no longer populated by the system.\n+optional",
                     "type": "string"
                 },
                 "subjects": {
@@ -1886,7 +2075,7 @@ var doc = `{
                     }
                 },
                 "uid": {
-                    "description": "UID is the unique in time and space value for this object. It is typically generated by\nthe server on successful creation of a resource and is not allowed to change on PUT\noperations.\n\nPopulated by the system.\nRead-only.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#uids\n+optional",
+                    "description": "UID is the unique in time and space value for this object. It is typically generated by\nthe server on successful creation of a resource and is not allowed to change on PUT\noperations.\n\nPopulated by the system.\nRead-only.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#uids\n+optional",
                     "type": "string"
                 }
             }
@@ -1904,6 +2093,23 @@ var doc = `{
                 },
                 "name": {
                     "description": "Name is the name of resource being referenced",
+                    "type": "string"
+                }
+            }
+        },
+        "v1.ScopeBinding": {
+            "type": "object",
+            "properties": {
+                "role": {
+                    "description": "Role the rbac role name.",
+                    "type": "string"
+                },
+                "scopeName": {
+                    "description": "ScopeName the specific scope name.",
+                    "type": "string"
+                },
+                "scopeType": {
+                    "description": "ScopeType the binding scope type that support tenant,project and platform.",
                     "type": "string"
                 }
             }
@@ -1965,7 +2171,7 @@ var doc = `{
             "type": "object",
             "properties": {
                 "annotations": {
-                    "description": "Annotations is an unstructured key value map stored with a resource that may be\nset by external tools to store and retrieve arbitrary metadata. They are not\nqueryable and should be preserved when modifying objects.\nMore info: http://kubernetes.io/docs/user-guide/annotations\n+optional",
+                    "description": "Annotations is an unstructured key value map stored with a resource that may be\nset by external tools to store and retrieve arbitrary metadata. They are not\nqueryable and should be preserved when modifying objects.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations\n+optional",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -1973,10 +2179,6 @@ var doc = `{
                 },
                 "apiVersion": {
                     "description": "APIVersion defines the versioned schema of this representation of an object.\nServers should convert recognized schemas to the latest internal value, and\nmay reject unrecognized values.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources\n+optional",
-                    "type": "string"
-                },
-                "clusterName": {
-                    "description": "The name of the cluster which the object belongs to.\nThis is used to distinguish resources with same name and namespace in different clusters.\nThis field is not set anywhere right now and apiserver is going to ignore it if set in create or update request.\n+optional",
                     "type": "string"
                 },
                 "creationTimestamp": {
@@ -1999,7 +2201,7 @@ var doc = `{
                     }
                 },
                 "generateName": {
-                    "description": "GenerateName is an optional prefix, used by the server, to generate a unique\nname ONLY IF the Name field has not been provided.\nIf this field is used, the name returned to the client will be different\nthan the name passed. This value will also be combined with a unique suffix.\nThe provided value has the same validation rules as the Name field,\nand may be truncated by the length of the suffix required to make the value\nunique on the server.\n\nIf this field is specified and the generated name exists, the server will\nNOT return a 409 - instead, it will either return 201 Created or 500 with Reason\nServerTimeout indicating a unique name could not be found in the time allotted, and the client\nshould retry (optionally after the time indicated in the Retry-After header).\n\nApplied only if Name is not specified.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#idempotency\n+optional",
+                    "description": "GenerateName is an optional prefix, used by the server, to generate a unique\nname ONLY IF the Name field has not been provided.\nIf this field is used, the name returned to the client will be different\nthan the name passed. This value will also be combined with a unique suffix.\nThe provided value has the same validation rules as the Name field,\nand may be truncated by the length of the suffix required to make the value\nunique on the server.\n\nIf this field is specified and the generated name exists, the server will return a 409.\n\nApplied only if Name is not specified.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#idempotency\n+optional",
                     "type": "string"
                 },
                 "generation": {
@@ -2011,7 +2213,7 @@ var doc = `{
                     "type": "string"
                 },
                 "labels": {
-                    "description": "Map of string keys and values that can be used to organize and categorize\n(scope and select) objects. May match selectors of replication controllers\nand services.\nMore info: http://kubernetes.io/docs/user-guide/labels\n+optional",
+                    "description": "Map of string keys and values that can be used to organize and categorize\n(scope and select) objects. May match selectors of replication controllers\nand services.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels\n+optional",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -2025,11 +2227,11 @@ var doc = `{
                     }
                 },
                 "name": {
-                    "description": "Name must be unique within a namespace. Is required when creating resources, although\nsome resources may allow a client to request the generation of an appropriate name\nautomatically. Name is primarily intended for creation idempotence and configuration\ndefinition.\nCannot be updated.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#names\n+optional",
+                    "description": "Name must be unique within a namespace. Is required when creating resources, although\nsome resources may allow a client to request the generation of an appropriate name\nautomatically. Name is primarily intended for creation idempotence and configuration\ndefinition.\nCannot be updated.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#names\n+optional",
                     "type": "string"
                 },
                 "namespace": {
-                    "description": "Namespace defines the space within which each name must be unique. An empty namespace is\nequivalent to the \"default\" namespace, but \"default\" is the canonical representation.\nNot all objects are required to be scoped to a namespace - the value of this field for\nthose objects will be empty.\n\nMust be a DNS_LABEL.\nCannot be updated.\nMore info: http://kubernetes.io/docs/user-guide/namespaces\n+optional",
+                    "description": "Namespace defines the space within which each name must be unique. An empty namespace is\nequivalent to the \"default\" namespace, but \"default\" is the canonical representation.\nNot all objects are required to be scoped to a namespace - the value of this field for\nthose objects will be empty.\n\nMust be a DNS_LABEL.\nCannot be updated.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces\n+optional",
                     "type": "string"
                 },
                 "ownerReferences": {
@@ -2044,7 +2246,7 @@ var doc = `{
                     "type": "string"
                 },
                 "selfLink": {
-                    "description": "SelfLink is a URL representing this object.\nPopulated by the system.\nRead-only.\n\nDEPRECATED\nKubernetes will stop propagating this field in 1.20 release and the field is planned\nto be removed in 1.21 release.\n+optional",
+                    "description": "Deprecated: selfLink is a legacy read-only field that is no longer populated by the system.\n+optional",
                     "type": "string"
                 },
                 "spec": {
@@ -2054,7 +2256,7 @@ var doc = `{
                     "$ref": "#/definitions/v1.UserStatus"
                 },
                 "uid": {
-                    "description": "UID is the unique in time and space value for this object. It is typically generated by\nthe server on successful creation of a resource and is not allowed to change on PUT\noperations.\n\nPopulated by the system.\nRead-only.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#uids\n+optional",
+                    "description": "UID is the unique in time and space value for this object. It is typically generated by\nthe server on successful creation of a resource and is not allowed to change on PUT\noperations.\n\nPopulated by the system.\nRead-only.\nMore info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names#uids\n+optional",
                     "type": "string"
                 }
             }
@@ -2082,7 +2284,17 @@ var doc = `{
                 "phone": {
                     "type": "string"
                 },
+                "scopeBindings": {
+                    "description": "ScopeBindings indicates user relationships with tenant,project or platform\n+optional",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.ScopeBinding"
+                    }
+                },
                 "state": {
+                    "type": "string"
+                },
+                "wechat": {
                     "type": "string"
                 }
             }
@@ -2090,151 +2302,37 @@ var doc = `{
         "v1.UserStatus": {
             "type": "object",
             "properties": {
+                "belongProjectInfos": {
+                    "description": "BelongProjectInfos indicates the user belongs to those projects.\n+optional",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/v1.ProjectInfo"
+                    }
+                },
+                "belongProjects": {
+                    "description": "BelongProjects indicates the user belongs to those projects.\n+optional\nDeprecated: use BelongProjectInfos instead",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "belongTenants": {
+                    "description": "BelongTenants indicates the user belongs to those tenants.\n+optional",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "lastLoginIP": {
                     "type": "string"
                 },
                 "lastLoginTime": {
                     "description": "The user status, normal/forbidden",
                     "type": "string"
-                }
-            }
-        },
-        "v1alpha2.MetaKVP": {
-            "type": "object",
-            "properties": {
-                "key": {
-                    "description": "Key is the name of the label or annotation. It must conform to the normal rules for Kubernetes\nlabel/annotation keys.",
-                    "type": "string"
                 },
-                "value": {
-                    "description": "Value is the value of the label or annotation. It must confirm to the normal rules for\nKubernetes label or annoation values, which are far more restrictive for labels than for\nanntations.",
-                    "type": "string"
-                }
-            }
-        },
-        "v1alpha2.SubnamespaceAnchor": {
-            "type": "object",
-            "properties": {
-                "annotations": {
-                    "description": "Annotations is an unstructured key value map stored with a resource that may be\nset by external tools to store and retrieve arbitrary metadata. They are not\nqueryable and should be preserved when modifying objects.\nMore info: http://kubernetes.io/docs/user-guide/annotations\n+optional",
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "apiVersion": {
-                    "description": "APIVersion defines the versioned schema of this representation of an object.\nServers should convert recognized schemas to the latest internal value, and\nmay reject unrecognized values.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources\n+optional",
-                    "type": "string"
-                },
-                "clusterName": {
-                    "description": "The name of the cluster which the object belongs to.\nThis is used to distinguish resources with same name and namespace in different clusters.\nThis field is not set anywhere right now and apiserver is going to ignore it if set in create or update request.\n+optional",
-                    "type": "string"
-                },
-                "creationTimestamp": {
-                    "description": "CreationTimestamp is a timestamp representing the server time when this object was\ncreated. It is not guaranteed to be set in happens-before order across separate operations.\nClients may not set this value. It is represented in RFC3339 form and is in UTC.\n\nPopulated by the system.\nRead-only.\nNull for lists.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata\n+optional",
-                    "type": "string"
-                },
-                "deletionGracePeriodSeconds": {
-                    "description": "Number of seconds allowed for this object to gracefully terminate before\nit will be removed from the system. Only set when deletionTimestamp is also set.\nMay only be shortened.\nRead-only.\n+optional",
-                    "type": "integer"
-                },
-                "deletionTimestamp": {
-                    "description": "DeletionTimestamp is RFC 3339 date and time at which this resource will be deleted. This\nfield is set by the server when a graceful deletion is requested by the user, and is not\ndirectly settable by a client. The resource is expected to be deleted (no longer visible\nfrom resource lists, and not reachable by name) after the time in this field, once the\nfinalizers list is empty. As long as the finalizers list contains items, deletion is blocked.\nOnce the deletionTimestamp is set, this value may not be unset or be set further into the\nfuture, although it may be shortened or the resource may be deleted prior to this time.\nFor example, a user may request that a pod is deleted in 30 seconds. The Kubelet will react\nby sending a graceful termination signal to the containers in the pod. After that 30 seconds,\nthe Kubelet will send a hard termination signal (SIGKILL) to the container and after cleanup,\nremove the pod from the API. In the presence of network partitions, this object may still\nexist after this timestamp, until an administrator or automated process can determine the\nresource is fully terminated.\nIf not set, graceful deletion of the object has not been requested.\n\nPopulated by the system when a graceful deletion is requested.\nRead-only.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata\n+optional",
-                    "type": "string"
-                },
-                "finalizers": {
-                    "description": "Must be empty before the object is deleted from the registry. Each entry\nis an identifier for the responsible component that will remove the entry\nfrom the list. If the deletionTimestamp of the object is non-nil, entries\nin this list can only be removed.\nFinalizers may be processed and removed in any order.  Order is NOT enforced\nbecause it introduces significant risk of stuck finalizers.\nfinalizers is a shared field, any actor with permission can reorder it.\nIf the finalizer list is processed in order, then this can lead to a situation\nin which the component responsible for the first finalizer in the list is\nwaiting for a signal (field value, external system, or other) produced by a\ncomponent responsible for a finalizer later in the list, resulting in a deadlock.\nWithout enforced ordering finalizers are free to order amongst themselves and\nare not vulnerable to ordering changes in the list.\n+optional\n+patchStrategy=merge",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "generateName": {
-                    "description": "GenerateName is an optional prefix, used by the server, to generate a unique\nname ONLY IF the Name field has not been provided.\nIf this field is used, the name returned to the client will be different\nthan the name passed. This value will also be combined with a unique suffix.\nThe provided value has the same validation rules as the Name field,\nand may be truncated by the length of the suffix required to make the value\nunique on the server.\n\nIf this field is specified and the generated name exists, the server will\nNOT return a 409 - instead, it will either return 201 Created or 500 with Reason\nServerTimeout indicating a unique name could not be found in the time allotted, and the client\nshould retry (optionally after the time indicated in the Retry-After header).\n\nApplied only if Name is not specified.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#idempotency\n+optional",
-                    "type": "string"
-                },
-                "generation": {
-                    "description": "A sequence number representing a specific generation of the desired state.\nPopulated by the system. Read-only.\n+optional",
-                    "type": "integer"
-                },
-                "kind": {
-                    "description": "Kind is a string value representing the REST resource this object represents.\nServers may infer this from the endpoint the client submits requests to.\nCannot be updated.\nIn CamelCase.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds\n+optional",
-                    "type": "string"
-                },
-                "labels": {
-                    "description": "Map of string keys and values that can be used to organize and categorize\n(scope and select) objects. May match selectors of replication controllers\nand services.\nMore info: http://kubernetes.io/docs/user-guide/labels\n+optional",
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "managedFields": {
-                    "description": "ManagedFields maps workflow-id and version to the set of fields\nthat are managed by that workflow. This is mostly for internal\nhousekeeping, and users typically shouldn't need to set or\nunderstand this field. A workflow can be the user's name, a\ncontroller's name, or the name of a specific apply path like\n\"ci-cd\". The set of fields is always in the version that the\nworkflow used when modifying the object.\n\n+optional",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/v1.ManagedFieldsEntry"
-                    }
-                },
-                "name": {
-                    "description": "Name must be unique within a namespace. Is required when creating resources, although\nsome resources may allow a client to request the generation of an appropriate name\nautomatically. Name is primarily intended for creation idempotence and configuration\ndefinition.\nCannot be updated.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#names\n+optional",
-                    "type": "string"
-                },
-                "namespace": {
-                    "description": "Namespace defines the space within which each name must be unique. An empty namespace is\nequivalent to the \"default\" namespace, but \"default\" is the canonical representation.\nNot all objects are required to be scoped to a namespace - the value of this field for\nthose objects will be empty.\n\nMust be a DNS_LABEL.\nCannot be updated.\nMore info: http://kubernetes.io/docs/user-guide/namespaces\n+optional",
-                    "type": "string"
-                },
-                "ownerReferences": {
-                    "description": "List of objects depended by this object. If ALL objects in the list have\nbeen deleted, this object will be garbage collected. If this object is managed by a controller,\nthen an entry in this list will point to this controller, with the controller field set to true.\nThere cannot be more than one managing controller.\n+optional\n+patchMergeKey=uid\n+patchStrategy=merge",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/v1.OwnerReference"
-                    }
-                },
-                "resourceVersion": {
-                    "description": "An opaque value that represents the internal version of this object that can\nbe used by clients to determine when objects have changed. May be used for optimistic\nconcurrency, change detection, and the watch operation on a resource or set of resources.\nClients must treat these values as opaque and passed unmodified back to the server.\nThey may only be valid for a particular resource or set of resources.\n\nPopulated by the system.\nRead-only.\nValue must be treated as opaque by clients and .\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency\n+optional",
-                    "type": "string"
-                },
-                "selfLink": {
-                    "description": "SelfLink is a URL representing this object.\nPopulated by the system.\nRead-only.\n\nDEPRECATED\nKubernetes will stop propagating this field in 1.20 release and the field is planned\nto be removed in 1.21 release.\n+optional",
-                    "type": "string"
-                },
-                "spec": {
-                    "$ref": "#/definitions/v1alpha2.SubnamespaceAnchorSpec"
-                },
-                "status": {
-                    "$ref": "#/definitions/v1alpha2.SubnamespaceAnchorStatus"
-                },
-                "uid": {
-                    "description": "UID is the unique in time and space value for this object. It is typically generated by\nthe server on successful creation of a resource and is not allowed to change on PUT\noperations.\n\nPopulated by the system.\nRead-only.\nMore info: http://kubernetes.io/docs/user-guide/identifiers#uids\n+optional",
-                    "type": "string"
-                }
-            }
-        },
-        "v1alpha2.SubnamespaceAnchorSpec": {
-            "type": "object",
-            "properties": {
-                "annotations": {
-                    "description": "Annotations is a list of annotations and values to apply to the current subnamespace and all of\nits descendants. All annotation keys must match a regex specified on the command line by\n--managed-namespace-annotation.\nAll annotation keys must be managed annotations (see HNC docs) and must match a regex",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/v1alpha2.MetaKVP"
-                    }
-                },
-                "labels": {
-                    "description": "Labels is a list of labels and values to apply to the current subnamespace and all of its\ndescendants. All label keys must match a regex specified on the command line by\n--managed-namespace-label.\nAll label keys must be managed labels (see HNC docs) and must match a regex",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/v1alpha2.MetaKVP"
-                    }
-                }
-            }
-        },
-        "v1alpha2.SubnamespaceAnchorStatus": {
-            "type": "object",
-            "properties": {
-                "status": {
-                    "description": "Describes the state of the subnamespace anchor.\n\nCurrently, the supported values are:\n\n- \"Missing\": the subnamespace has not been created yet. This should be the default state when\nthe anchor is just created.\n\n- \"Ok\": the subnamespace exists. This is the only good state of the anchor.\n\n- \"Conflict\": a namespace of the same name already exists. The admission controller will\nattempt to prevent this.\n\n- \"Forbidden\": the anchor was created in a namespace that doesn't allow children, such as\nkube-system or hnc-system. The admission controller will attempt to prevent this.",
-                    "type": "string"
+                "platformAdmin": {
+                    "description": "PlatformAdmin indicates the user is platform admin or not.\n+optional",
+                    "type": "boolean"
                 }
             }
         }
