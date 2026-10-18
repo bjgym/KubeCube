@@ -72,6 +72,9 @@ func (h *handler) AddApisTo(root *gin.Engine) {
 	r.GET("roles/:name", h.getRoleItems)
 	// 写权限与读权限不是同一件事：读告诉你自己能做什么，写决定所有人能做什么。
 	r.PUT("roles/:name", h.requirePlatformAdmin(), h.setRoleItems)
+	// 删除一个角色和写它一样，决定的是所有人能做什么，所以用同一道门。服务端
+	// 还会拒绝内置角色，以及仍然有人绑定的角色：见 roledeletion.go。
+	r.DELETE("roles/:name", h.requirePlatformAdmin(), h.deleteRole)
 	r.GET("deamonsets/level", h.getDaemonSetsLevel)
 	r.GET("members", h.getScopeMembers)
 	r.DELETE("members", h.delScopeMembers)
@@ -226,12 +229,37 @@ func (h *handler) getRoleItems(c *gin.Context) {
 		items[item] = detail.Verb
 	}
 
-	response.SuccessReturn(c, &mapping.RoleItemsBody{
+	holders, err := h.roleHolders(name)
+	if err != nil {
+		response.FailReturn(c, errcode.BadRequest(err))
+		return
+	}
+
+	response.SuccessReturn(c, &roleItemsAnswer{
 		// What the server wrote down when the role was saved. It is reported for
 		// display; nothing here is decided from it.
-		Scope: clusterRole.Labels[constants.RoleLabel],
-		Items: items,
+		Scope:   clusterRole.Labels[constants.RoleLabel],
+		Items:   items,
+		Builtin: isBuiltinRole(clusterRole),
+		Holders: holders.Len(),
 	})
+}
+
+// roleItemsAnswer is what a console reads when it asks about one role: what the
+// role holds, and whether it may be removed.
+//
+// Builtin and Holders are the two facts the removal decision rests on, reported
+// with the read the console already makes when it selects a role — so the
+// action it offers and the answer the server would give cannot disagree, and
+// neither of them has to guess from the name.
+type roleItemsAnswer struct {
+	Scope string                           `json:"scope"`
+	Items map[string]mapping.VerbRepresent `json:"items"`
+	// Builtin says the role belongs to the deployment and may not be deleted.
+	Builtin bool `json:"builtin"`
+	// Holders is how many subjects are bound to the role; a role with holders
+	// is in use and may not be deleted.
+	Holders int `json:"holders"`
 }
 
 // setRoleItems writes a role from the items a person chose.
@@ -309,6 +337,84 @@ func (h *handler) setRoleItems(c *gin.Context) {
 		return
 	}
 
+	response.SuccessReturn(c, nil)
+}
+
+// deleteRole removes one role this platform manages.
+//
+// The condition is the product's, not the API's: a role nobody holds is a
+// leftover and may go, and a role somebody holds is a grant, so removing it
+// would take authority away without saying whose. The two refusals live in
+// roleRemovalRefusal, and both name what to do about them.
+// @Summary Delete role
+// @Description delete a role that is not built in and that nobody is bound to
+// @Tags authorization
+// @Param name path string true "role name"
+// @Success 200 {object} response.SuccessInfo
+// @Failure 400 {object} errcode.ErrorInfo
+// @Failure 403 {object} errcode.ErrorInfo
+// @Router /api/v1/cube/authorization/roles/:name [delete]
+func (h *handler) deleteRole(c *gin.Context) {
+	ctx := c.Request.Context()
+	name := c.Param("name")
+	if strings.TrimSpace(name) == "" {
+		response.FailReturn(c, errcode.InvalidBodyFormat)
+		return
+	}
+
+	// The same authority the role write needs, because removing a role decides
+	// what everybody may do just as writing one does. The scope check beside it
+	// is the one the binding writes use, in the shape a cluster-scoped object
+	// allows: a role is bound by every scope at once, so no tenant and no project
+	// owns it alone and the scope that does is the platform. Today only a
+	// platform administrator passes the gate above, so this refuses nobody the
+	// gate has not already refused — it is here so that a destructive endpoint
+	// carries the check in its own body rather than depending on the gate.
+	caller, err := h.callerOf(c)
+	if err != nil {
+		response.FailReturn(c, errcode.BadRequest(err))
+		return
+	}
+	if !h.reachesScope(caller, string(user.PlatformScope), "") {
+		response.FailReturn(c, errcode.ForbiddenErr)
+		return
+	}
+
+	clusterRole := &rbacv1.ClusterRole{}
+	err = h.Cache().Get(ctx, types.NamespacedName{Name: name}, clusterRole)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// The console asked for the role to be absent, and it is.
+			response.SuccessJsonReturn(c, "resource has been deleted")
+			return
+		}
+		response.FailReturn(c, errcode.BadRequest(err))
+		return
+	}
+
+	holders, err := h.roleHolders(name)
+	if err != nil {
+		response.FailReturn(c, errcode.BadRequest(err))
+		return
+	}
+
+	// A refusal here is the caller's to act on, so it carries its own message
+	// instead of the generic "bad request" wrapper.
+	if err := roleRemovalRefusal(clusterRole, holders.Len()); err != nil {
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
+		return
+	}
+
+	// The copies in the member clusters go with it and nothing has to be removed
+	// by hand: the role carries kubecube.io/sync=true, so a warden's sync
+	// controller receives the deletion on its pivot and deletes the copy it
+	// mirrored (pkg/warden/syncmgr/register.go, deleteObjFunc).
+	if err := h.Direct().Delete(ctx, clusterRole); err != nil && !errors.IsNotFound(err) {
+		response.FailReturn(c, errcode.BadRequest(err))
+		return
+	}
+
+	clog.Info("role %s was deleted by %s", name, caller.Name)
 	response.SuccessReturn(c, nil)
 }
 
