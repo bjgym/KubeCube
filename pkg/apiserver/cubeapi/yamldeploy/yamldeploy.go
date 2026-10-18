@@ -71,6 +71,18 @@ func (h *Handler) Deploy(c *gin.Context) {
 		return
 	}
 
+	// A body with no objects binds successfully into an empty slice, and the
+	// loop below then runs zero times and the handler answers with success. That
+	// is how a console sending a bare object instead of {objects:[...]} reported
+	// a successful deploy for two years while creating nothing: the request was
+	// well formed, it just did not carry a resource. Refuse it here, so the
+	// failure is visible at the caller instead of silent at the server.
+	if len(objs.Objects) == 0 {
+		clog.Warn("yaml deploy request carried no objects")
+		response.FailReturn(c, errcode.InvalidBodyFormat)
+		return
+	}
+
 	clusters := multicluster.Interface().FuzzyCopy()
 	cluster, ok := clusters[clusterName]
 	if !ok {
