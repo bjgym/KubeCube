@@ -77,9 +77,6 @@ func TestTheDeployedCatalogueParses(t *testing.T) {
 	if _, err := catalogue.Grant("crds.manage", LevelTenant); err == nil {
 		t.Error("crds.manage is grantable at the tenant level, and the catalogue says it is the platform's alone")
 	}
-	if _, err := catalogue.Grant("resourcegroups.scope", LevelProject); err != nil {
-		t.Errorf("resourcegroups.scope is not grantable at the project level: %v", err)
-	}
 
 	// Every item the console offers has to be grantable somewhere, or it is a
 	// checkbox that can never be ticked.

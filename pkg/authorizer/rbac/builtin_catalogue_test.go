@@ -42,30 +42,21 @@ var builtinAggregatingRoles = []string{
 	"project-admin-cluster",
 }
 
-// itemsNothingCanHoldYet names the catalogue items no built-in role holds, and
-// records that the decision about them is pending rather than taken.
+// itemsNothingCanHoldYet would name the catalogue items no built-in role holds.
 //
-// Both are real gaps rather than test noise. The catalogue offers them, but no
-// built-in role grants resourcegroups, resourcegroups/status or
-// resourcegroups/members, so no built-in role can hold either item, and the
-// string `resourcegroups/members` is named nowhere else in the repository —
-// the one comment that promises the platform evaluates it is the catalogue's
-// own. The API types exist (pkg/apis/app/v1, pkg/resourcegroup) and the
-// platform's own ClusterRole grants the group, but the chart installs no CRD
-// for it, so an item ticked here grants rules for an API the deployment does
-// not serve. The two items were declared ahead of that design, which is still
-// proposed:
-// .agents/notes/proposed/architecture/2026-10-10-resource-groups-and-agent-scope.md
+// It is empty now. It used to carry resourcegroups.manage and resourcegroups.scope,
+// which the catalogue declared ahead of the feature that would evaluate them: the
+// chart installed no app.kubecube.io CRD, no built-in role granted resourcegroups,
+// resourcegroups/status or resourcegroups/members, and the string
+// `resourcegroups/members` was named nowhere else in the repository. The decision
+// taken was to remove the two items rather than keep offering a checkbox that can
+// never be ticked, so the catalogue no longer holds them and the assertion below
+// now covers every item it does hold.
 //
-// Removing the items, annotating them as not grantable, or giving a built-in
-// role the resources is a product decision. This list is not a substitute for
-// the assertion below: every entry is still reported on every run, with the
-// resources that are missing, and the list exists only so a check that found a
-// real gap does not fail CI before someone decides what to do about the gap.
-var itemsNothingCanHoldYet = map[string]bool{
-	"resourcegroups.manage": true,
-	"resourcegroups.scope":  true,
-}
+// Keep the list. An item that no role can hold should be recorded here with the
+// same reasoning, and reported on every run, rather than added to the catalogue
+// and left silently unchecked.
+var itemsNothingCanHoldYet = map[string]bool{}
 
 // TestTheBuiltInRolesHoldTheCatalogue reads the catalogue the chart ships and
 // the built-in roles it ships with it, and asks the two questions that keep the
