@@ -56,8 +56,16 @@ fmt-check:
 		exit 1; \
 	fi;
 
+# Pinned, because the template embedded in the generated docs changes between
+# swag releases and the vendored runtime has to match it. v1.7.9 emits
+# swag.Spec/InfoInstanceName, which vendor/github.com/swaggo/swag v1.6.7 does not
+# define, so its output does not compile — it was tried, and reverted. v1.7.0 is
+# what docs/ contains today and is the version it was last generated with.
+# Bumping this means bumping the vendor tree in the same change, and regenerating.
+SWAG_VERSION ?= v1.7.0
+
 swag-gen:
-	swag init --parseDependency --parseInternal --parseDepth 3 -g ./pkg/apiserver/apiserver.go
+	go run github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION) init --parseDependency --parseInternal --parseDepth 3 -g ./pkg/apiserver/apiserver.go
 
 vendor:
 	go mod vendor
