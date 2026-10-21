@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 
 	v1 "k8s.io/api/admission/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -71,6 +72,22 @@ func (r *CubeResourceQuotaValidator) Handle(ctx context.Context, req admission.R
 			return admission.Errored(http.StatusBadRequest, err)
 		}
 
+		// Removing a finalizer is an UPDATE, never a DELETE: the API server
+		// only drops a finalizer when a client rewrites metadata.finalizers.
+		// Comparing that rewrite to the parent quota can deny it — the parent
+		// may already be gone, so Parent() returns NotFound — which leaves the
+		// CubeResourceQuota unable to finish terminating; nothing else can
+		// remove the finalizer, so no client could repair it. Allow the repair
+		// itself before any comparison: an update of an object already marked
+		// for deletion, and an edit that only rewrites finalizers while leaving
+		// the spec untouched. Creates and real spec changes keep both checks.
+		if currentQuota.DeletionTimestamp != nil {
+			return admission.Allowed("")
+		}
+		if onlyFinalizersChanged(currentQuota, oldQuota) {
+			return admission.Allowed("")
+		}
+
 		if !cube.AllowedUpdate(currentQuota, oldQuota) {
 			reason := fmt.Sprintf("hard of cube resource quota %v should not less than used", currentQuota.Name)
 			clog.Warn(reason)
@@ -108,4 +125,15 @@ func (r *CubeResourceQuotaValidator) Handle(ctx context.Context, req admission.R
 	//go callback(q, req.Operation == v1.Delete)
 
 	return admission.Allowed("")
+}
+
+// onlyFinalizersChanged reports whether an update leaves the quota spec alone
+// and only rewrites metadata.finalizers — the shape the controller uses to
+// drop the finalizer of a CubeResourceQuota that is already being deleted.
+func onlyFinalizersChanged(current, old *quotav1.CubeResourceQuota) bool {
+	if !reflect.DeepEqual(current.Spec, old.Spec) {
+		return false
+	}
+
+	return !reflect.DeepEqual(current.Finalizers, old.Finalizers)
 }

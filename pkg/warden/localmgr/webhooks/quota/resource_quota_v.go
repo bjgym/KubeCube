@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"reflect"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	v1 "k8s.io/api/core/v1"
@@ -77,6 +78,27 @@ func (r *ResourceQuotaValidator) Handle(ctx context.Context, req admission.Reque
 		currentQuota = nil
 	}
 
+	// Dropping a finalizer reaches this webhook as an UPDATE, never as a
+	// DELETE: the API server only removes a finalizer when a client rewrites
+	// metadata.finalizers. This handler compared that rewrite to the parent
+	// quota like any other shrink and denied it ("less resource(requests.storage)
+	// but parent quota had ..."), so a ResourceQuota that outlives its parent
+	// kept the warden finalizer and the namespace holding it could not finish
+	// terminating. Nothing else can remove the finalizer, which made the state
+	// unrecoverable from the console and from kubectl alike. Allow the repair
+	// itself: a DELETE, an update of an object already marked for deletion, and
+	// an edit that only rewrites finalizers while leaving the spec untouched.
+	// Creates and real spec changes still go through the quota comparison.
+	if req.Operation == admissionv1.Delete {
+		return admission.Allowed("")
+	}
+	if currentQuota.DeletionTimestamp != nil {
+		return admission.Allowed("")
+	}
+	if req.Operation == admissionv1.Update && onlyFinalizersChanged(currentQuota, oldQuota) {
+		return admission.Allowed("")
+	}
+
 	q := k8s.NewQuotaOperator(r.PivotClient, r.LocalClient, currentQuota, oldQuota, context.Background())
 
 	if req.Operation != admissionv1.Delete {
@@ -94,4 +116,15 @@ func (r *ResourceQuotaValidator) Handle(ctx context.Context, req admission.Reque
 	//go callback(q, req.Operation == admissionv1.Delete)
 
 	return admission.Allowed("")
+}
+
+// onlyFinalizersChanged reports whether an update leaves the quota spec alone
+// and only rewrites metadata.finalizers — the shape both this project's
+// controllers and a "kubectl patch" use to drop the warden finalizer.
+func onlyFinalizersChanged(current, old *v1.ResourceQuota) bool {
+	if !reflect.DeepEqual(current.Spec, old.Spec) {
+		return false
+	}
+
+	return !reflect.DeepEqual(current.Finalizers, old.Finalizers)
 }

@@ -108,19 +108,30 @@ func (r *QuotaReconciler) ensureFinalizer(ctx context.Context, currentQuota *v1.
 }
 
 func (r *QuotaReconciler) removeFinalizer(ctx context.Context, currentQuota *v1.ResourceQuota, quotaOperator quota.Interface) error {
-	if controllerutil.ContainsFinalizer(currentQuota, quota.Finalizer) {
-		clog.Info("delete ResourceQuota (%v/%v)", currentQuota.Name, currentQuota.Namespace)
-		err := quotaOperator.UpdateParentStatus(true)
-		if err != nil {
-			clog.Error("update parent status of ResourceQuota (%v/%v) failed: %v", currentQuota.Name, currentQuota.Namespace, err)
-			return err
-		}
-		controllerutil.RemoveFinalizer(currentQuota, quota.Finalizer)
-		err = r.Update(ctx, currentQuota)
-		if err != nil {
-			clog.Warn("delete finalizer to ResourceQuota (%v/%v) failed: %v", currentQuota.Name, currentQuota.Namespace, err)
-			return err
-		}
+	if !controllerutil.ContainsFinalizer(currentQuota, quota.Finalizer) {
+		return nil
+	}
+
+	clog.Info("delete ResourceQuota (%v/%v)", currentQuota.Name, currentQuota.Namespace)
+
+	// The CubeResourceQuota this ResourceQuota reports to can already be gone by
+	// the time the ResourceQuota is torn down: deleting a space deletes both,
+	// and their order is not guaranteed. Parent() then returns NotFound and the
+	// flush fails. That must not abort the reconcile. This finalizer guards the
+	// ResourceQuota's own deletion and this reconcile is the only thing that can
+	// remove it, so returning here would leave the finalizer in place forever
+	// and the namespace holding the quota stuck in Terminating. The flush stays
+	// best effort; the parent's status is rebuilt from its remaining sub quotas
+	// on the next reconcile.
+	if err := quotaOperator.UpdateParentStatus(true); err != nil {
+		clog.Warn("update parent status of deleting ResourceQuota (%v/%v) failed, removing the finalizer anyway: %v",
+			currentQuota.Name, currentQuota.Namespace, err)
+	}
+
+	controllerutil.RemoveFinalizer(currentQuota, quota.Finalizer)
+	if err := r.Update(ctx, currentQuota); err != nil {
+		clog.Warn("delete finalizer to ResourceQuota (%v/%v) failed: %v", currentQuota.Name, currentQuota.Namespace, err)
+		return err
 	}
 
 	return nil

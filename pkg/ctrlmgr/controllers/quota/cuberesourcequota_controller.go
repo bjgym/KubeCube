@@ -106,20 +106,29 @@ func (r *CubeResourceQuotaReconciler) ensureFinalizer(ctx context.Context, cubeQ
 }
 
 func (r *CubeResourceQuotaReconciler) removeFinalizer(ctx context.Context, cubeQuota *quotav1.CubeResourceQuota, quotaOperator quota.Interface) error {
-	if controllerutil.ContainsFinalizer(cubeQuota, quota.Finalizer) {
-		clog.Info("delete CubeResourceQuota %v", cubeQuota.Name)
-		err := quotaOperator.UpdateParentStatus(true)
-		if err != nil {
-			clog.Error("update parent status of CubeResourceQuota %v failed: %v", cubeQuota.Name, err)
-			return err
-		}
-		controllerutil.RemoveFinalizer(cubeQuota, quota.Finalizer)
-		err = r.Update(ctx, cubeQuota)
-		if err != nil {
-			clog.Warn("delete finalizer to CubeResourceQuota %v failed: %v", cubeQuota.Name, err)
-			return err
-		}
+	if !controllerutil.ContainsFinalizer(cubeQuota, quota.Finalizer) {
+		return nil
 	}
+
+	clog.Info("delete CubeResourceQuota %v", cubeQuota.Name)
+
+	// Same ordering hazard as the warden ResourceQuota controller: the parent
+	// CubeResourceQuota can be deleted first, so Parent() returns NotFound and
+	// the flush fails. This finalizer guards this object's own deletion and this
+	// reconcile is the only place that can drop it, so a failed flush must not
+	// skip the removal — otherwise the CubeResourceQuota stays in Terminating
+	// forever. The flush stays best effort; the parent's status is rebuilt from
+	// its remaining sub quotas on the next reconcile.
+	if err := quotaOperator.UpdateParentStatus(true); err != nil {
+		clog.Warn("update parent status of deleting CubeResourceQuota %v failed, removing the finalizer anyway: %v", cubeQuota.Name, err)
+	}
+
+	controllerutil.RemoveFinalizer(cubeQuota, quota.Finalizer)
+	if err := r.Update(ctx, cubeQuota); err != nil {
+		clog.Warn("delete finalizer to CubeResourceQuota %v failed: %v", cubeQuota.Name, err)
+		return err
+	}
+
 	return nil
 }
 
