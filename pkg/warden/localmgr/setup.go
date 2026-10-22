@@ -112,6 +112,19 @@ func setupControllersWithManager(m *LocalManager, controllers string) error {
 		}
 	}
 
+	// A member's Tenant is a copy of the pivot's as well, and it arrives carrying
+	// the pivot's tenant finalizer. Its release needs an owner on the member for
+	// the same reason, and is registered outside these toggles for the same
+	// reason: the sync manager runs on every member regardless of them, so
+	// disabling "tenant" must not be able to strand a tenant the pivot has
+	// already deleted.
+	if m.IsMemberCluster {
+		err = tenant.SetupTenantFinalizerWithManager(m.Manager)
+		if err != nil {
+			return err
+		}
+	}
+
 	if ctrlopts.IsControllerEnabled("user", ctrls) {
 		err = user.SetupWithManager(m.Manager, nil)
 		if err != nil {

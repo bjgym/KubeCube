@@ -77,7 +77,7 @@ func TestReconcileAddsTheFinalizer(t *testing.T) {
 	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: tenantName}, got); err != nil {
 		t.Fatalf("cannot read the tenant back: %v", err)
 	}
-	if !controllerutil.ContainsFinalizer(got, tenantFinalizer) {
+	if !controllerutil.ContainsFinalizer(got, constants.TenantFinalizer) {
 		t.Error("the tenant has no finalizer, so a deletion that happens while this controller is down would never be cascaded")
 	}
 }
@@ -123,7 +123,7 @@ func TestCascadeDeletesProjectsAndHoldsTheTenant(t *testing.T) {
 	if err := fakeClient.Get(ctx, types.NamespacedName{Name: tenantName}, held); err != nil {
 		t.Fatalf("the tenant is gone while its projects were still there: %v", err)
 	}
-	if !controllerutil.ContainsFinalizer(held, tenantFinalizer) {
+	if !controllerutil.ContainsFinalizer(held, constants.TenantFinalizer) {
 		t.Error("the tenant was released in the same pass that deleted its projects, so the projects were not waited for")
 	}
 }
@@ -153,7 +153,7 @@ func TestCascadeReleasesTheTenantOnlyOnceItsProjectsAreGone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot read the tenant back: %v", err)
 	}
-	if controllerutil.ContainsFinalizer(got, tenantFinalizer) {
+	if controllerutil.ContainsFinalizer(got, constants.TenantFinalizer) {
 		t.Error("the tenant is still held after its projects are gone, so it could never be deleted")
 	}
 }

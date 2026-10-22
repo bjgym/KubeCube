@@ -48,10 +48,6 @@ import (
 	"github.com/kubecube-io/kubecube/pkg/utils/constants"
 )
 
-// tenantFinalizer holds a tenant until the projects it owns are gone. The name
-// follows the cluster controller's.
-const tenantFinalizer = "tenant.finalizers.kubecube.io"
-
 // cascadeInterval bounds how often a tenant whose projects are still going is
 // looked at again. The projects delete on their own, so this waits rather than
 // blocks a worker.
@@ -122,11 +118,11 @@ func (r *Reconciler) projectMapFunc(_ context.Context, obj client.Object) []reco
 }
 
 func (r *Reconciler) ensureFinalizer(ctx context.Context, tenant *tenantv1.Tenant) error {
-	if controllerutil.ContainsFinalizer(tenant, tenantFinalizer) {
+	if controllerutil.ContainsFinalizer(tenant, constants.TenantFinalizer) {
 		return nil
 	}
 
-	controllerutil.AddFinalizer(tenant, tenantFinalizer)
+	controllerutil.AddFinalizer(tenant, constants.TenantFinalizer)
 	if err := r.Update(ctx, tenant); err != nil {
 		clog.Error("tenancy: cannot add the finalizer to tenant %s: %v", tenant.Name, err)
 		return err
@@ -136,12 +132,12 @@ func (r *Reconciler) ensureFinalizer(ctx context.Context, tenant *tenantv1.Tenan
 }
 
 func (r *Reconciler) removeFinalizer(ctx context.Context, tenant *tenantv1.Tenant) error {
-	if !controllerutil.ContainsFinalizer(tenant, tenantFinalizer) {
+	if !controllerutil.ContainsFinalizer(tenant, constants.TenantFinalizer) {
 		return nil
 	}
 
 	clog.Info("tenancy: tenant %s has no projects left, releasing it", tenant.Name)
-	controllerutil.RemoveFinalizer(tenant, tenantFinalizer)
+	controllerutil.RemoveFinalizer(tenant, constants.TenantFinalizer)
 	if err := r.Update(ctx, tenant); err != nil {
 		clog.Error("tenancy: cannot remove the finalizer from tenant %s: %v", tenant.Name, err)
 		return err

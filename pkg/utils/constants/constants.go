@@ -171,6 +171,13 @@ const (
 	// SyncAnnotation use for sync logic of warden
 	SyncAnnotation = "kubecube.io/sync"
 
+	// TenantFinalizer holds a tenant on the pivot until the projects it owns are
+	// gone. It is named here, away from the controller that adds it, because the
+	// sync manager copies the finalizer to every member with the synced tenant:
+	// the pivot's cascade and the member's release have to agree on the string,
+	// and a second literal in the member's code is how the two sides drift.
+	TenantFinalizer = "tenant.finalizers.kubecube.io"
+
 	// ForceDeleteAnnotation used to force deletion of some resources that are not allowed to be deleted
 	ForceDeleteAnnotation = "kubecube.io/force-delete"
 )
