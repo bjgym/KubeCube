@@ -100,6 +100,18 @@ func setupControllersWithManager(m *LocalManager, controllers string) error {
 		}
 	}
 
+	// A member's CubeResourceQuota is created by the sync manager, not by a
+	// controller, so its deletion needs an owner on the member as well. It is
+	// deliberately outside these toggles: the sync manager runs on every member
+	// regardless of them, and disabling "quota" must not be able to strand an
+	// object the pivot has already torn down.
+	if m.IsMemberCluster {
+		err = quota.SetupCubeResourceQuotaWithManager(m.Manager)
+		if err != nil {
+			return err
+		}
+	}
+
 	if ctrlopts.IsControllerEnabled("user", ctrls) {
 		err = user.SetupWithManager(m.Manager, nil)
 		if err != nil {
