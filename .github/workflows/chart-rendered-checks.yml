@@ -1,0 +1,161 @@
+name: Chart-rendered checks
+
+# KubeCube and kubecube-chart are separate repositories. Three test files in
+# pkg/authorizer/rbac compare this repository's Go code with the chart, and they
+# read the chart *rendered by helm* rather than its templates. Each of them
+# returns t.Skip when KUBECUBE_RENDERED_CHART is unset -- and build.yml checks
+# out KubeCube alone, so in CI that variable was never set: every check below
+# was green without checking anything. This workflow supplies the chart and the
+# variable, and turns a skip back into a failure, so the checks run.
+#
+# What each check protects once it runs:
+#
+#   pkg/authorizer/rbac/builtin_catalogue_test.go
+#     TestTheBuiltInRolesHoldTheCatalogue -- every item of the catalogue in the
+#     rendered kubecube-auth-mapping ConfigMap is fully held (in mapping's sense)
+#     by one of the six built-in aggregating ClusterRoles, or is recorded in
+#     itemsNothingCanHoldYet with the decision it waits on. It also reports
+#     every resource a built-in role grants that no catalogue item names.
+#
+#   pkg/authorizer/rbac/builtin_roles_test.go
+#     TestTheBuiltInRolesKeepClusterScopedWritesOut -- the tenant, project and
+#     reviewer roles hold no create/update/patch/delete over cluster-scoped
+#     resources, while the platform administrator keeps the namespace update the
+#     platform itself needs.
+#     TestThePlatformRunsAsItsOwnServiceAccount -- the chart renders a kubecube
+#     ServiceAccount, kubecube-rolebinding binds it, both Deployments run as it,
+#     and no ClusterRole anywhere is `*/*/*`.
+#
+#   pkg/authorizer/rbac/webhook_boundaries_test.go
+#     TestTheChartsWebhookConfigurationsKeepTheirBoundaries and
+#     TestTheLocalAndChartWebhooksAgree -- the ResourceQuota webhook in the
+#     chart's static resources is failurePolicy Ignore, selects only namespaces
+#     the platform owns, and agrees with the checked-in local manifests.
+#     TestNoCRDIsConvertedByAWebhook -- no rendered CRD uses
+#     `strategy: Webhook`. It needs --include-crds below, without which the
+#     render holds no CRD and the check fails rather than passing.
+#
+# The chart revision: `main`, not a tag. Pinning a tag would make this job
+# reproducible but blind to the drift it exists to catch -- a chart change can
+# silently invalidate a KubeCube catalogue or role change, and with a pinned
+# chart this job would only ever test an older chart. Tracking `main` catches
+# that drift, at the cost of letting an unrelated chart commit turn KubeCube CI
+# red. The job prints the chart commit it rendered so a red run says which
+# repository to look at; the trade is accepted because a broken contract should
+# be visible here rather than at release time. A chart change alone does not
+# trigger this workflow -- the next KubeCube push or pull request renders
+# whatever `main` is at that moment.
+
+on:
+  push:
+    branches:
+      - main
+      - release-*
+    tags:
+      - v*
+  pull_request:
+    branches:
+      - main
+      - release-*
+
+jobs:
+  rendered-chart:
+    name: Checks against the rendered chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out KubeCube
+        uses: actions/checkout@v4
+
+      # The tests read the chart as a sibling (the commands in their comments
+      # use ../kubecube-chart for a local checkout); checking it out under
+      # `path:` reproduces that layout. This checkout is the one thing the
+      # build job does not need, which is why these checks live here and not in
+      # build.yml: a failure here is about the contract between the two
+      # repositories, and the check list should say so.
+      - name: Check out kubecube-chart
+        uses: actions/checkout@v4
+        with:
+          repository: bjgym/kubecube-chart
+          ref: main
+          path: kubecube-chart
+
+      - name: Record the chart commit under test
+        run: |
+          echo "kubecube-chart is at $(git -C kubecube-chart rev-parse HEAD) ($(git -C kubecube-chart log -1 --format=%s))"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # The version build.yml pins. The build is vendored (GOFLAGS below),
+          # so it needs no module download; `cache` keeps the compile cache
+          # warm between runs, keyed on go.sum.
+          go-version: '1.20.1'
+          cache: true
+
+      # Pinned because the rendered manifest is the fixture these checks read:
+      # a different helm release could change that fixture without a commit in
+      # either repository. 3.14.4 is the version this render was verified with.
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+
+      # A hard step on purpose: a chart that cannot render (bad values, a
+      # missing subchart, a helm error) must fail the job, not leave it to the
+      # tests to skip. The redirection creates rendered.yaml even when helm
+      # fails, but helm's non-zero exit still fails this step.
+      - name: Render the chart
+        run: |
+          helm template kubecube ./kubecube-chart \
+            --include-crds \
+            --set-string global.componentsEnable.kubecube=true > rendered.yaml
+
+      # The render is the input to every check below, so an empty or reduced
+      # render must be a failure here rather than a set of green skips later.
+      # Each marker is a document one of the tests reads; --include-crds is what
+      # puts the CRDs in the render.
+      - name: Check the render holds what the checks read
+        run: |
+          test -s rendered.yaml
+          for marker in \
+            'kind: ClusterRole' \
+            'kind: CustomResourceDefinition' \
+            'kind: Deployment' \
+            'name: kubecube-auth-mapping' \
+            'kind: ValidatingWebhookConfiguration'; do
+            if ! grep -qF "$marker" rendered.yaml; then
+              echo "rendered.yaml holds no '$marker', so the chart did not render what these checks read" >&2
+              exit 1
+            fi
+          done
+
+      # Only the checks that need the chart. The rest of the package
+      # (TestTheBoundaryRuleItself, TestTheLocalWebhookConfigurationsKeepTheirBoundaries)
+      # needs no chart and already runs in build.yml. -count=1 bypasses the test
+      # cache so a green run is a run, and GOFLAGS keeps the vendored tree
+      # offline.
+      #
+      # KUBECUBE_RENDERED_CHART must be absolute: go test runs each test binary
+      # with the package directory (pkg/authorizer/rbac) as its working
+      # directory, so a bare `rendered.yaml` would be looked for there and every
+      # check would fail to read a file that exists at the repository root.
+      - name: Run the chart-rendered checks
+        env:
+          KUBECUBE_RENDERED_CHART: ${{ github.workspace }}/rendered.yaml
+          GOFLAGS: -mod=vendor
+        run: |
+          set -o pipefail
+          go test -count=1 -v ./pkg/authorizer/rbac/ \
+            -run '^(TestTheBuiltInRolesHoldTheCatalogue|TestTheBuiltInRolesKeepClusterScopedWritesOut|TestThePlatformRunsAsItsOwnServiceAccount|TestTheChartsWebhookConfigurationsKeepTheirBoundaries|TestTheLocalAndChartWebhooksAgree|TestNoCRDIsConvertedByAWebhook)$' \
+            | tee rendered-checks.log
+
+      # go test exits 0 when a test skips, so a future edit that stops setting
+      # KUBECUBE_RENDERED_CHART -- or renames it -- would return this job to
+      # being green and inert. That is the failure this workflow exists to fix,
+      # so a skip is a failure here.
+      - name: Fail if a check skipped
+        run: |
+          if grep -q -- '--- SKIP' rendered-checks.log; then
+            echo "a chart-rendered check skipped, so KUBECUBE_RENDERED_CHART did not reach it" >&2
+            exit 1
+          fi
