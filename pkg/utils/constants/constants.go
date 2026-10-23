@@ -178,7 +178,12 @@ const (
 	// and a second literal in the member's code is how the two sides drift.
 	TenantFinalizer = "tenant.finalizers.kubecube.io"
 
-	// ForceDeleteAnnotation used to force deletion of some resources that are not allowed to be deleted
+	// ForceDeleteAnnotation admits a DELETE on a member cluster, and that is all it
+	// does. The name promises more than the code delivers: nothing reads it to remove
+	// a finalizer or to skip the pivot's cascade, so a tenant or project set to
+	// "true" still stays in Terminating until the objects below it are gone. It was
+	// read as "force the delete through" by both an operator and, for a while, by
+	// this comment.
 	ForceDeleteAnnotation = "kubecube.io/force-delete"
 )
 

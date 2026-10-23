@@ -56,7 +56,11 @@ func (r *Validator) Handle(ctx context.Context, req admission.Request) admission
 			return admission.Errored(http.StatusBadRequest, err)
 		}
 		if r.IsMember && project.Annotations[constants.ForceDeleteAnnotation] != "true" {
-			return admission.Errored(http.StatusBadRequest, fmt.Errorf("member cluster does not allow deletion of project %s", project.Name))
+			// Same wording as the tenant validator: the refusal should tell an
+			// operator what to set and be honest that the flag only admits the
+			// request, it does not skip the cascade.
+			return admission.Errored(http.StatusBadRequest, fmt.Errorf("member cluster does not allow deletion of project %s: set %s to \"true\" to admit the request; the annotation permits the delete, it does not skip the cascade - the project remains until its namespaces are gone",
+				project.Name, constants.ForceDeleteAnnotation))
 		}
 		return admission.Allowed("")
 	}
