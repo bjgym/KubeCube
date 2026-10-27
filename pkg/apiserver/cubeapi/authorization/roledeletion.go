@@ -28,7 +28,7 @@ import (
 // builtinRoleNames are the ClusterRoles the chart ships under
 // kubecube-chart/templates/kubecube/rbac/buildin/. They are the roles the
 // platform itself binds, and nothing in the platform would recreate one.
-var builtinRoleNames = sets.NewString(
+var builtinRoleNames = sets.New[string](
 	constants.PlatformAdmin,
 	constants.TenantAdmin,
 	constants.ProjectAdmin,
@@ -110,8 +110,8 @@ func roleRemovalRefusal(role *rbacv1.ClusterRole, holders int) error {
 // platform does not know as a user — cannot be read at all through it. That
 // would fail closed on the roles the console opens first, and it answers "which
 // users hold this" rather than "is this still granted to anybody".
-func (h *handler) roleHolders(name string) (sets.String, error) {
-	holders := sets.NewString()
+func (h *handler) roleHolders(name string) (sets.Set[string], error) {
+	holders := sets.New[string]()
 
 	clusterRoleBindings, err := h.ListClusterRoleBindings()
 	if err != nil {

@@ -206,7 +206,7 @@ func marshal(v interface{}) []byte {
 	if err != nil {
 		// The values marshalled here are built by this package, so a failure
 		// means a programming error rather than bad input.
-		return []byte(`{"jsonrpc":"2.0","error":{"code":-32603,"message":"the reply could not be encoded"}}`)
+		return []byte(fmt.Sprintf(`{"jsonrpc":"2.0","error":{"code":%d,"message":"the reply could not be encoded"}}`, codeInternalError))
 	}
 	return out
 }
