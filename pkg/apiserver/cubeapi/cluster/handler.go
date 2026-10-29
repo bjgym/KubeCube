@@ -17,7 +17,9 @@ limitations under the License.
 package cluster
 
 import (
+	"context"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -755,6 +757,16 @@ func (h *handler) createNsAndQuota(c *gin.Context) {
 		time.Sleep(retryInterval)
 	}
 
+	// The space's quota is created on the member, and the member's resourcequota webhook
+	// checks the tenant's per-cluster quota on the pivot before it lets it through. The
+	// console sends a space's quota and never its tenant's, so a tenant created before
+	// the clusters it runs on has no parent there and no space can be created on them.
+	if err = ensureTenantQuota(ctx, h.Direct(), data.Cluster, data.Space.Labels[constants.TenantLabel]); err != nil {
+		rollback()
+		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
+		return
+	}
+
 	// final action failed would rollback whole action
 	err = cli.Direct().Create(ctx, data.ResourceQuota)
 	if err != nil {
@@ -767,6 +779,56 @@ func (h *handler) createNsAndQuota(c *gin.Context) {
 		username, data.Space.Name, data.ResourceQuota.Name, data.Cluster)
 
 	response.SuccessJsonReturn(c, "success")
+}
+
+// ensureTenantQuota makes sure the tenant holds its per-cluster CubeResourceQuota on the
+// pivot before a space's quota is created on the member.
+//
+// The member's resourcequota webhook looks that parent up by name (<cluster>.<tenant>)
+// and refuses the space when it is missing, but nothing creates it: the console sends a
+// space's quota and never its tenant's, and a member's own copy is an orphan the sync
+// manager collects because the pivot is the source of truth. A tenant created before the
+// clusters it runs on therefore has no parent, and no space can be created on them.
+//
+// Creating it here with no limits, under the labels the console would use, is idempotent
+// and only ever touches a quota that does not exist; an existing tenant quota is left
+// exactly as its owner set it.
+func ensureTenantQuota(ctx context.Context, c client.Client, cluster, tenant string) error {
+	if tenant == "" {
+		return nil
+	}
+
+	name := fmt.Sprintf("%v.%v", cluster, tenant)
+	existing := &quotav1.CubeResourceQuota{}
+	err := c.Get(ctx, types.NamespacedName{Name: name}, existing)
+	if err == nil {
+		return nil
+	}
+	if !errors.IsNotFound(err) {
+		return err
+	}
+
+	quotaObj := &quotav1.CubeResourceQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				constants.CubeQuotaLabel: name,
+				constants.ClusterLabel:   cluster,
+				constants.TenantLabel:    tenant,
+			},
+		},
+		Spec: quotav1.CubeResourceQuotaSpec{
+			Target: quotav1.TargetObj{Name: tenant, Kind: quotav1.TenantObj},
+		},
+	}
+
+	err = c.Create(ctx, quotaObj)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return err
+	}
+
+	clog.Info("created the tenant quota %v for tenant %v on cluster %v", name, tenant, cluster)
+	return nil
 }
 
 // onboardNamespace takes a namespace the platform does not own under
