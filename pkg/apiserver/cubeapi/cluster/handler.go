@@ -761,10 +761,12 @@ func (h *handler) createNsAndQuota(c *gin.Context) {
 	// checks the tenant's per-cluster quota on the pivot before it lets it through. The
 	// console sends a space's quota and never its tenant's, so a tenant created before
 	// the clusters it runs on has no parent there and no space can be created on them.
-	if err = ensureTenantQuota(ctx, h.Direct(), data.Cluster, data.Space.Labels[constants.TenantLabel]); err != nil {
-		rollback()
-		response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
-		return
+	if data.ResourceQuota != nil {
+		if err = ensureTenantQuota(ctx, h.Direct(), data.Cluster, data.Space.Labels[constants.TenantLabel], data.ResourceQuota.Spec.Hard); err != nil {
+			rollback()
+			response.FailReturn(c, errcode.CustomReturn(http.StatusBadRequest, err.Error()))
+			return
+		}
 	}
 
 	// final action failed would rollback whole action
@@ -790,10 +792,12 @@ func (h *handler) createNsAndQuota(c *gin.Context) {
 // manager collects because the pivot is the source of truth. A tenant created before the
 // clusters it runs on therefore has no parent, and no space can be created on them.
 //
-// Creating it here with no limits, under the labels the console would use, is idempotent
-// and only ever touches a quota that does not exist; an existing tenant quota is left
-// exactly as its owner set it.
-func ensureTenantQuota(ctx context.Context, c client.Client, cluster, tenant string) error {
+// The parent gets the space's own hard limits, because the webhook also refuses a resource
+// the parent does not list: a parent with no limits would turn "not found" into "can not
+// set a resource that parent quota hard not had", which is a worse message and still a
+// refusal. The first space therefore sets the tenant's allowance on that cluster, and an
+// operator narrows or widens it afterwards; an existing quota is left exactly as it is.
+func ensureTenantQuota(ctx context.Context, c client.Client, cluster, tenant string, hard v1.ResourceList) error {
 	if tenant == "" {
 		return nil
 	}
@@ -819,6 +823,7 @@ func ensureTenantQuota(ctx context.Context, c client.Client, cluster, tenant str
 		},
 		Spec: quotav1.CubeResourceQuotaSpec{
 			Target: quotav1.TargetObj{Name: tenant, Kind: quotav1.TenantObj},
+			Hard:   hard,
 		},
 	}
 
@@ -827,7 +832,7 @@ func ensureTenantQuota(ctx context.Context, c client.Client, cluster, tenant str
 		return err
 	}
 
-	clog.Info("created the tenant quota %v for tenant %v on cluster %v", name, tenant, cluster)
+	clog.Info("created the tenant quota %v for tenant %v on cluster %v with the space's limits", name, tenant, cluster)
 	return nil
 }
 

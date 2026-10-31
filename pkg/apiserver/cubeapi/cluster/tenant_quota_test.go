@@ -43,8 +43,9 @@ func TestEnsureTenantQuota(t *testing.T) {
 
 	t.Run("creates the parent the member's webhook looks for", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
+		hard := v1.ResourceList{v1.ResourceRequestsCPU: resource.MustParse("1")}
 
-		if err := ensureTenantQuota(ctx, c, "member-1", "t1"); err != nil {
+		if err := ensureTenantQuota(ctx, c, "member-1", "t1", hard); err != nil {
 			t.Fatalf("ensureTenantQuota: %v", err)
 		}
 
@@ -54,6 +55,11 @@ func TestEnsureTenantQuota(t *testing.T) {
 		}
 		if got.Spec.Target.Kind != quotav1.TenantObj || got.Spec.Target.Name != "t1" {
 			t.Errorf("target is %v/%v, want Tenant/t1", got.Spec.Target.Kind, got.Spec.Target.Name)
+		}
+		// The webhook refuses a resource the parent does not list, so the parent has to
+		// carry what the space asked for.
+		if _, ok := got.Spec.Hard[v1.ResourceRequestsCPU]; !ok {
+			t.Errorf("parent hard is %v, want it to carry the space's requests.cpu", got.Spec.Hard)
 		}
 		if got.Labels[constants.CubeQuotaLabel] != "member-1.t1" {
 			t.Errorf("quota label is %q, want member-1.t1", got.Labels[constants.CubeQuotaLabel])
@@ -73,7 +79,7 @@ func TestEnsureTenantQuota(t *testing.T) {
 		}
 		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existing).Build()
 
-		if err := ensureTenantQuota(ctx, c, "member-1", "t1"); err != nil {
+		if err := ensureTenantQuota(ctx, c, "member-1", "t1", v1.ResourceList{v1.ResourceRequestsCPU: resource.MustParse("8")}); err != nil {
 			t.Fatalf("ensureTenantQuota: %v", err)
 		}
 
@@ -81,15 +87,15 @@ func TestEnsureTenantQuota(t *testing.T) {
 		if err := c.Get(ctx, types.NamespacedName{Name: "member-1.t1"}, got); err != nil {
 			t.Fatalf("get: %v", err)
 		}
-		if len(got.Spec.Hard) != 1 {
-			t.Errorf("hard limits are %v, want the one that was already there", got.Spec.Hard)
+		if q, ok := got.Spec.Hard[v1.ResourceRequestsCPU]; !ok || q.String() != "2" {
+			t.Errorf("hard limits are %v, want the 2 that was already there rather than the space's 8", got.Spec.Hard)
 		}
 	})
 
 	t.Run("a space naming no tenant is not given a parent", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
 
-		if err := ensureTenantQuota(ctx, c, "member-1", ""); err != nil {
+		if err := ensureTenantQuota(ctx, c, "member-1", "", nil); err != nil {
 			t.Fatalf("ensureTenantQuota: %v", err)
 		}
 
