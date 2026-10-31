@@ -20,6 +20,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,19 +78,45 @@ func newMultiClusterMgr() *MultiClustersMgr {
 	c.Client, err = client.NewClientFor(exit.SetupCtxWithStop(context.Background(), c.StopCh), config)
 	if err != nil {
 		// early exit when connect to the k8s apiserver of control plane failed
-		clog.Fatal("make client for local cluster failed: %v", err)
+		return initFailure("make client for local cluster failed", err)
 	}
 	c.Version, err = c.Client.Discovery().ServerVersion()
 	if err != nil {
-		clog.Fatal("discovery cluster version failed: %v", err)
+		return initFailure("discovery cluster version failed", err)
 	}
 
 	err = m.Add(constants.LocalCluster, c)
 	if err != nil {
-		clog.Fatal("init multi cluster mgr failed: %v", err)
+		return initFailure("init multi cluster mgr failed", err)
 	}
 
 	return m
+}
+
+// initFailure is what the three failures after the kubeconfig has loaded do: exit the
+// process in the platform, and hand back no manager in a test binary.
+//
+// The two checks above already say "only allowed when testing" and return nil, but the
+// ones below used to exit unconditionally. This package initialises at import time, so
+// that exit happened before any test ran: a machine whose ~/.kube/config points at some
+// other cluster turned every suite that reaches this package into a process that dies
+// with a stack trace and no assertion output at all.
+func initFailure(msg string, err error) *MultiClustersMgr {
+	if runningUnderTest() {
+		clog.Warn("%v: %v (continuing because this is a test binary)", msg, err)
+		return nil
+	}
+	clog.Fatal("%v: %v", msg, err)
+	return nil
+}
+
+// runningUnderTest reports whether this process is a test binary.
+//
+// The name is the signal, not the flags: the testing package registers -test.v when Run is
+// called, which is after every init function has run, so a flag lookup here would always
+// say no. A test binary is named <package>.test (with .exe on Windows).
+func runningUnderTest() bool {
+	return strings.Contains(filepath.Base(os.Args[0]), ".test")
 }
 
 // InternalCluster represent a cluster runtime contains

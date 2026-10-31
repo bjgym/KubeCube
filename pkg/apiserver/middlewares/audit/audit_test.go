@@ -23,7 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -71,15 +71,19 @@ func TestSendEvent(t *testing.T) {
 func TestGetEventName(t *testing.T) {
 	file, err := os.Getwd()
 	if err != nil {
-		t.Fail()
-		return
+		t.Fatalf("working directory: %v", err)
 	}
-	file = strings.TrimSuffix(file, "pkg/apiserver/middlewares/audit") + "test/i18n"
+	// The fixture lives at KubeCube/test/i18n, four levels up from this package. The old
+	// TrimSuffix only worked on a forward-slash path, so on Windows it cut nothing and the
+	// path came out as .../audittest/i18n, which does not exist.
+	file = filepath.Join(file, "..", "..", "..", "..", "test", "i18n")
 
 	e := &Event{}
 	ctx := context.Background()
 	enInstance := gi18n.Instance()
-	enInstance.SetPath(file)
+	if err := enInstance.SetPath(file); err != nil {
+		t.Fatalf("i18n path %q: %v", file, err)
+	}
 	enInstance.SetLanguage("en")
 	h := Handler{
 		enInstance,
@@ -94,7 +98,7 @@ func TestGetEventName(t *testing.T) {
 	})
 	_ = performRequest(router1, http.MethodPost, "/api/v1/cube/proxy/clusters/pivot-cluster/api/v1/namespaces/dev/services", []byte(""))
 	if e.EventName != "createService" {
-		t.Fail()
+		t.Errorf("POST on services: event name is %q, want %q", e.EventName, "createService")
 	}
 
 	// check put method
@@ -105,6 +109,6 @@ func TestGetEventName(t *testing.T) {
 	})
 	_ = performRequest(router2, http.MethodPut, "/api/v1/cube/proxy/clusters/pivot-cluster/api/v1/namespaces/dev/secrets/secretA", []byte(""))
 	if e.EventName != "updateSecret" {
-		t.Fail()
+		t.Errorf("PUT on secrets: event name is %q, want %q", e.EventName, "updateSecret")
 	}
 }
